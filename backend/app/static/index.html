@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>TradeLab Replay</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+    <script src="https://unpkg.com/lightweight-charts/dist/lightweight-charts.standalone.production.js"></script>
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <div class="brand" data-i18n="brand.title">TradeLab Replay</div>
+        <div class="topbar-right">
+          <div class="meta" data-i18n="brand.subtitle">Offline Historical Playback Trainer</div>
+          <select id="langSelect" class="lang-select">
+            <option value="zh">中文</option>
+            <option value="en">English</option>
+          </select>
+        </div>
+      </header>
+
+      <section class="toolbar card">
+        <div class="field-group">
+          <label for="pairSelect" data-i18n="toolbar.pair">Pair</label>
+          <select id="pairSelect"></select>
+        </div>
+        <div class="field-group">
+          <label for="timeframeSelect" data-i18n="toolbar.timeframe">Timeframe</label>
+          <select id="timeframeSelect"></select>
+        </div>
+        <div class="field-group">
+          <label for="startDate" data-i18n="toolbar.start">Start</label>
+          <input id="startDate" type="date" />
+        </div>
+        <div class="field-group">
+          <label for="endDate" data-i18n="toolbar.end">End</label>
+          <input id="endDate" type="date" />
+        </div>
+        <div class="field-group small">
+          <label for="visibleBars" data-i18n="toolbar.visible">Visible</label>
+          <input id="visibleBars" type="number" min="20" value="120" />
+        </div>
+        <div class="field-group small">
+          <label for="hiddenBars" data-i18n="toolbar.replay">Replay</label>
+          <input id="hiddenBars" type="number" min="1" value="120" />
+        </div>
+        <button id="createSessionBtn" class="btn btn-primary" data-i18n="toolbar.createSession">Create Session</button>
+        <button
+          id="refreshRandomBtn"
+          class="btn icon-btn"
+          title="刷新随机K线"
+          aria-label="刷新随机K线"
+          data-i18n-title="toolbar.refreshRandom"
+          data-i18n-aria="toolbar.refreshRandom"
+        >
+          <svg class="refresh-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M21 12a9 9 0 1 1-2.64-6.36" />
+            <path d="M21 4v6h-6" />
+          </svg>
+        </button>
+      </section>
+
+      <section class="layout-grid">
+        <div class="chart-stack card">
+          <div class="chart-toolbar">
+            <span data-i18n="indicators.title">Indicators</span>
+            <select id="indicatorSelect">
+              <option value="sma">SMA</option>
+              <option value="ema">EMA</option>
+              <option value="boll">BOLL</option>
+              <option value="rsi">RSI</option>
+              <option value="macd">MACD</option>
+            </select>
+            <button id="addIndicatorBtn" class="btn" data-i18n="indicators.add">添加指标</button>
+          </div>
+          <div id="indicatorsPanel" class="indicators-panel"></div>
+          <div id="positionOverlay" class="position-overlay hidden"></div>
+          <div id="priceChart" class="chart price"></div>
+          <div id="indicatorChart" class="chart indicator"></div>
+        </div>
+
+        <div class="side-panel">
+          <section class="card panel prediction-panel">
+            <h3 data-i18n="prediction.title">Prediction</h3>
+            <div class="inline-fields">
+              <label><input type="radio" name="side" value="long" checked /> <span data-i18n="prediction.long">Long</span></label>
+              <label><input type="radio" name="side" value="short" /> <span data-i18n="prediction.short">Short</span></label>
+            </div>
+            <div class="field-group">
+              <label for="entryPriceLimit" data-i18n="prediction.entryLimit">Entry Price (Limit)</label>
+              <input id="entryPriceLimit" type="number" min="0.00000001" step="0.00000001" />
+            </div>
+            <div class="field-group">
+              <label for="marginUsdt" data-i18n="prediction.margin">Margin / Cost (USDT)</label>
+              <input id="marginUsdt" type="number" min="1" step="1" value="100" />
+            </div>
+            <div class="field-group">
+              <label for="leverage" data-i18n="prediction.leverage">Leverage (x)</label>
+              <input id="leverage" type="number" min="3" max="100" step="1" value="10" />
+            </div>
+            <div class="field-group">
+              <label for="slPrice" data-i18n="prediction.slPrice">Stop Loss Price</label>
+              <input id="slPrice" type="number" min="0.00000001" step="0.00000001" />
+            </div>
+            <div class="field-group">
+              <label for="tpPrice" data-i18n="prediction.tpPrice">Take Profit Price</label>
+              <input id="tpPrice" type="number" min="0.00000001" step="0.00000001" />
+            </div>
+            <div class="field-group">
+              <label for="prioritySelect" data-i18n="prediction.priority">Same-Bar Priority</label>
+              <select id="prioritySelect">
+                <option value="stop_first" data-i18n="prediction.stopFirst">Stop First</option>
+                <option value="take_first" data-i18n="prediction.takeFirst">Take First</option>
+              </select>
+            </div>
+            <pre id="predictionMetrics" class="prediction-metrics">Set entry/SL/TP to calculate RR.</pre>
+            <button id="submitPredictionBtn" class="btn btn-primary" data-i18n="prediction.submit">Submit Prediction</button>
+          </section>
+
+          <section class="card panel replay-panel">
+            <h3 data-i18n="replay.title">Replay Control</h3>
+            <div class="inline-fields">
+              <button id="stepBtn" class="btn">Step +1</button>
+              <button id="step5Btn" class="btn">Step +5</button>
+            </div>
+            <div class="inline-fields">
+              <button id="playBtn" class="btn btn-primary" data-i18n="replay.play">Auto Play</button>
+              <button id="pauseBtn" class="btn" data-i18n="replay.pause">Pause</button>
+            </div>
+            <div class="field-group small">
+              <label for="speedMs" data-i18n="replay.speed">Speed (ms)</label>
+              <input id="speedMs" type="number" min="50" step="50" value="250" />
+            </div>
+          </section>
+
+          <section class="card panel result-panel">
+            <h3 data-i18n="result.title">Result</h3>
+            <pre id="resultBox">No session yet.</pre>
+          </section>
+
+          <section class="card panel status-panel">
+            <h3 data-i18n="status.title">Status</h3>
+            <pre id="statusBox">Ready</pre>
+          </section>
+        </div>
+      </section>
+    </div>
+
+    <script src="/static/app.js"></script>
+  </body>
+</html>
