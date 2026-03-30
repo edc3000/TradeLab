@@ -22,10 +22,40 @@ const state = {
     stop: null,
     take: null,
   },
+  predictionGuideZones: {
+    profit: null,
+    loss: null,
+  },
+  predictionGuideLines: {
+    entry: null,
+    stop: null,
+    take: null,
+  },
+  predictionGuideDragTarget: null,
+  predictionGuideDragRange: null,
+  sessionVersion: 0,
+  sessionLoadingPromise: null,
+  indicatorRefreshToken: 0,
 };
 
 const DEFAULT_SL_PCT = 1.5;
 const DEFAULT_RR = 1.5;
+const PREDICTION_FUTURE_BARS = 24;
+const TIMEFRAME_SECONDS = {
+  "5m": 300,
+  "15m": 900,
+  "30m": 1800,
+  "1h": 3600,
+  "2h": 7200,
+  "4h": 14400,
+  "6h": 21600,
+  "8h": 28800,
+  "12h": 43200,
+  "1d": 86400,
+  "3d": 259200,
+  "1w": 604800,
+  "1M": 2592000,
+};
 const LANG_STORAGE_KEY = "tradelab_lang_v1";
 const INDICATOR_STORAGE_KEY = "tradelab_indicator_configs_v1";
 const INDICATOR_NAMES = ["sma", "ema", "boll", "rsi", "macd"];
@@ -65,6 +95,9 @@ const I18N = {
     "prediction.title": "预测",
     "prediction.long": "多头",
     "prediction.short": "空头",
+    "prediction.mode": "预测类型",
+    "prediction.modeLong": "多头仓位",
+    "prediction.modeShort": "空头仓位",
     "prediction.entryLimit": "开仓价 (Limit)",
     "prediction.margin": "开仓成本 (USDT)",
     "prediction.leverage": "杠杆 (x)",
@@ -88,7 +121,7 @@ const I18N = {
     "replay.title": "回放控制",
     "replay.step1": "步进 +1",
     "replay.step5": "步进 +5",
-    "replay.play": "自动回放",
+    "replay.play": "回放",
     "replay.pause": "暂停",
     "replay.speed": "速度 (ms)",
     "result.title": "结果",
@@ -100,7 +133,7 @@ const I18N = {
     "status.current_pair_no_tf": "当前交易对没有周期数据。",
     "status.range_loaded": "范围已加载: {start} -> {end}",
     "status.creating_session": "正在创建回放会话...",
-    "status.session_created": "会话已创建。请先提交预测再开始回放。",
+    "status.session_created": "会话已创建。",
     "status.random_refreshed": "随机K线已刷新。",
     "status.submitting_prediction": "正在提交预测...",
     "status.prediction_submitted": "预测已提交。开仓价 {entry} | RR 1:{rr}",
@@ -110,6 +143,11 @@ const I18N = {
     "status.create_failed": "创建失败: {err}",
     "status.refresh_failed": "刷新失败: {err}",
     "status.prediction_failed": "预测失败: {err}",
+    "status.chart_no_session": "会话未就绪，正在创建...",
+    "status.chart_locked": "已有已提交预测，请刷新随机K线后再设置新的预测。",
+    "status.chart_ready_long": "已设置默认多头 1:1，可拖拽 ENTRY/SL/TP 微调。",
+    "status.chart_ready_short": "已设置默认空头 1:1，可拖拽 ENTRY/SL/TP 微调。",
+    "status.replay_preparing": "正在创建会话并提交预测...",
     "status.step_failed": "步进失败: {err}",
     "status.play_failed": "播放失败: {err}",
     "status.indicator_failed": "指标加载失败: {err}",
@@ -173,6 +211,9 @@ const I18N = {
     "prediction.title": "Prediction",
     "prediction.long": "Long",
     "prediction.short": "Short",
+    "prediction.mode": "Prediction Type",
+    "prediction.modeLong": "Long Position",
+    "prediction.modeShort": "Short Position",
     "prediction.entryLimit": "Entry Price (Limit)",
     "prediction.margin": "Margin / Cost (USDT)",
     "prediction.leverage": "Leverage (x)",
@@ -196,7 +237,7 @@ const I18N = {
     "replay.title": "Replay Control",
     "replay.step1": "Step +1",
     "replay.step5": "Step +5",
-    "replay.play": "Auto Play",
+    "replay.play": "Replay",
     "replay.pause": "Pause",
     "replay.speed": "Speed (ms)",
     "result.title": "Result",
@@ -208,7 +249,7 @@ const I18N = {
     "status.current_pair_no_tf": "Current pair has no timeframe data.",
     "status.range_loaded": "Range loaded: {start} -> {end}",
     "status.creating_session": "Creating replay session...",
-    "status.session_created": "Session created. Submit prediction before stepping.",
+    "status.session_created": "Session created.",
     "status.random_refreshed": "Random K-line refreshed.",
     "status.submitting_prediction": "Submitting prediction...",
     "status.prediction_submitted": "Prediction submitted. Entry {entry} | RR 1:{rr}",
@@ -218,6 +259,11 @@ const I18N = {
     "status.create_failed": "Create failed: {err}",
     "status.refresh_failed": "Refresh failed: {err}",
     "status.prediction_failed": "Prediction failed: {err}",
+    "status.chart_no_session": "Session not ready. Creating one...",
+    "status.chart_locked": "A prediction is already submitted. Refresh random K-line first.",
+    "status.chart_ready_long": "Default long 1:1 is set. Drag ENTRY/SL/TP to fine tune.",
+    "status.chart_ready_short": "Default short 1:1 is set. Drag ENTRY/SL/TP to fine tune.",
+    "status.replay_preparing": "Creating session and submitting prediction...",
     "status.step_failed": "Step failed: {err}",
     "status.play_failed": "Play failed: {err}",
     "status.indicator_failed": "Indicator failed: {err}",
@@ -254,19 +300,15 @@ const el = {
   startDate: document.getElementById("startDate"),
   endDate: document.getElementById("endDate"),
   visibleBars: document.getElementById("visibleBars"),
-  hiddenBars: document.getElementById("hiddenBars"),
-  createSessionBtn: document.getElementById("createSessionBtn"),
   refreshRandomBtn: document.getElementById("refreshRandomBtn"),
   langSelect: document.getElementById("langSelect"),
   indicatorSelect: document.getElementById("indicatorSelect"),
   addIndicatorBtn: document.getElementById("addIndicatorBtn"),
   indicatorsPanel: document.getElementById("indicatorsPanel"),
-  submitPredictionBtn: document.getElementById("submitPredictionBtn"),
-  stepBtn: document.getElementById("stepBtn"),
-  step5Btn: document.getElementById("step5Btn"),
   playBtn: document.getElementById("playBtn"),
   pauseBtn: document.getElementById("pauseBtn"),
   speedMs: document.getElementById("speedMs"),
+  predictionModeSelect: document.getElementById("predictionModeSelect"),
   entryPriceLimit: document.getElementById("entryPriceLimit"),
   marginUsdt: document.getElementById("marginUsdt"),
   leverage: document.getElementById("leverage"),
@@ -343,12 +385,6 @@ function applyI18n() {
       node.setAttribute("aria-label", t(key));
     }
   });
-  if (el.stepBtn) {
-    el.stepBtn.textContent = t("replay.step1");
-  }
-  if (el.step5Btn) {
-    el.step5Btn.textContent = t("replay.step5");
-  }
   const locale = state.lang === "en" ? "en-US" : "zh-CN";
   priceChart.applyOptions({
     localization: {
@@ -989,19 +1025,35 @@ volumeSeries.priceScale().applyOptions({
 });
 
 priceChart.timeScale().subscribeVisibleLogicalRangeChange((range) => {
-  if (!range || state.isRangeSyncing) {
+  if (
+    !range ||
+    !Number.isFinite(range.from) ||
+    !Number.isFinite(range.to) ||
+    state.isRangeSyncing ||
+    state.subIndicatorSeries.length === 0
+  ) {
     return;
   }
   state.isRangeSyncing = true;
   try {
-    indicatorChart.timeScale().setVisibleLogicalRange(range);
+    try {
+      indicatorChart.timeScale().setVisibleLogicalRange(range);
+    } catch (_err) {
+      // Ignore transient pane sync errors (e.g. indicator pane has no ready data yet).
+    }
   } finally {
     state.isRangeSyncing = false;
   }
 });
 
 indicatorChart.timeScale().subscribeVisibleLogicalRangeChange((range) => {
-  if (!range || state.isRangeSyncing || state.isRefreshingIndicators) {
+  if (
+    !range ||
+    !Number.isFinite(range.from) ||
+    !Number.isFinite(range.to) ||
+    state.isRangeSyncing ||
+    state.isRefreshingIndicators
+  ) {
     return;
   }
   state.isRangeSyncing = true;
@@ -1013,16 +1065,82 @@ indicatorChart.timeScale().subscribeVisibleLogicalRangeChange((range) => {
 });
 
 function syncIndicatorRangeFromPrice() {
+  if (state.subIndicatorSeries.length === 0) {
+    return;
+  }
   const range = priceChart.timeScale().getVisibleLogicalRange();
-  if (!range) {
+  if (!range || !Number.isFinite(range.from) || !Number.isFinite(range.to)) {
     return;
   }
   state.isRangeSyncing = true;
   try {
-    indicatorChart.timeScale().setVisibleLogicalRange(range);
+    try {
+      indicatorChart.timeScale().setVisibleLogicalRange(range);
+    } catch (_err) {
+      // Ignore transient pane sync errors (e.g. indicator pane has no ready data yet).
+    }
   } finally {
     state.isRangeSyncing = false;
   }
+}
+
+function applyTimeRange(range) {
+  if (!range || !Number.isFinite(range.from) || !Number.isFinite(range.to) || range.to <= range.from) {
+    return;
+  }
+  state.isRangeSyncing = true;
+  try {
+    priceChart.timeScale().setVisibleRange(range);
+    const logical = priceChart.timeScale().getVisibleLogicalRange();
+    if (
+      state.subIndicatorSeries.length > 0 &&
+      logical &&
+      Number.isFinite(logical.from) &&
+      Number.isFinite(logical.to)
+    ) {
+      try {
+        indicatorChart.timeScale().setVisibleLogicalRange(logical);
+      } catch (_err) {
+        // Ignore transient pane sync errors (e.g. indicator pane has no ready data yet).
+      }
+    }
+  } finally {
+    state.isRangeSyncing = false;
+  }
+}
+
+function centerLatestForReplayStart(session) {
+  const bars = session?.bars || [];
+  if (!bars.length) {
+    return;
+  }
+  const latestLogical = bars.length - 1;
+  if (!Number.isFinite(latestLogical) || latestLogical < 0) {
+    return;
+  }
+
+  let span = Math.max(20, Number(session?.visible_bars || el.visibleBars?.value || 120));
+  const existing = priceChart.timeScale().getVisibleLogicalRange();
+  if (existing && Number.isFinite(existing.from) && Number.isFinite(existing.to)) {
+    const existingSpan = Number(existing.to) - Number(existing.from);
+    if (Number.isFinite(existingSpan) && existingSpan > 0) {
+      span = existingSpan;
+    }
+  }
+  const leftRatio = 0.4;
+  const from = latestLogical - span * leftRatio;
+  const to = from + span;
+
+  state.isRangeSyncing = true;
+  try {
+    priceChart.timeScale().setVisibleLogicalRange({
+      from,
+      to,
+    });
+  } finally {
+    state.isRangeSyncing = false;
+  }
+  syncIndicatorRangeFromPrice();
 }
 
 function formatIndicatorHover(ts) {
@@ -1130,8 +1248,7 @@ function setStatus(text) {
 }
 
 function getSideValue() {
-  const node = document.querySelector('input[name="side"]:checked');
-  return node ? node.value : "long";
+  return el.predictionModeSelect?.value === "short" ? "short" : "long";
 }
 
 function toNumberOrNull(value) {
@@ -1140,6 +1257,240 @@ function toNumberOrNull(value) {
   }
   const n = Number(value);
   return Number.isFinite(n) ? n : null;
+}
+
+function setSideValue(side) {
+  const next = side === "short" ? "short" : "long";
+  if (el.predictionModeSelect) {
+    el.predictionModeSelect.value = next;
+  }
+}
+
+function formatInputPrice(price) {
+  const n = Number(price);
+  if (!Number.isFinite(n) || n <= 0) {
+    return "";
+  }
+  if (n >= 1000) {
+    return n.toFixed(2);
+  }
+  if (n >= 1) {
+    return n.toFixed(4);
+  }
+  return n.toFixed(8);
+}
+
+function clearChartPredictionPlacementMode() {
+  // no-op: kept for compatibility with previous flow
+}
+
+function getLastVisibleClosePrice() {
+  return Number(state.session?.bars?.[state.session?.bars?.length - 1]?.close ?? NaN);
+}
+
+function canUseChartPredictionTool() {
+  if (!state.session) {
+    setStatus(t("status.chart_no_session"));
+    return false;
+  }
+  if (state.session.prediction) {
+    setStatus(t("status.chart_locked"));
+    return false;
+  }
+  return true;
+}
+
+function seedPredictionInputs(side, entryPrice, rrRatio = DEFAULT_RR) {
+  const entry = Number(entryPrice);
+  if (!Number.isFinite(entry) || entry <= 0) {
+    return false;
+  }
+  const slFactor = DEFAULT_SL_PCT / 100;
+  const tpFactor = (DEFAULT_SL_PCT * Math.max(0.1, Number(rrRatio) || DEFAULT_RR)) / 100;
+  let stop = 0;
+  let take = 0;
+
+  if (side === "short") {
+    stop = entry * (1 + slFactor);
+    take = entry * (1 - tpFactor);
+  } else {
+    stop = entry * (1 - slFactor);
+    take = entry * (1 + tpFactor);
+  }
+
+  setSideValue(side);
+  el.entryPriceLimit.value = formatInputPrice(entry);
+  el.slPrice.value = formatInputPrice(stop);
+  el.tpPrice.value = formatInputPrice(take);
+  normalizeSlTpForSide();
+  renderPredictionMetrics();
+  setStatus(t(side === "short" ? "status.chart_ready_short" : "status.chart_ready_long"));
+  return true;
+}
+
+function applyPredictionModePreset(force = false) {
+  const side = getSideValue();
+  if (!side) {
+    return;
+  }
+  if (!state.session || !state.session.bars?.length) {
+    return;
+  }
+  if (state.session.prediction) {
+    setStatus(t("status.chart_locked"));
+    return;
+  }
+  if (!force) {
+    const current = computePredictionPreview();
+    if (current.ok) {
+      renderPredictionMetrics();
+      return;
+    }
+  }
+  const ref = getLastVisibleClosePrice();
+  if (!Number.isFinite(ref) || ref <= 0) {
+    return;
+  }
+  seedPredictionInputs(side, ref, 1.0);
+}
+
+function getPredictionFutureStepSeconds(session) {
+  const tf = String(session?.timeframe || "");
+  const mapped = TIMEFRAME_SECONDS[tf];
+  if (Number.isFinite(mapped) && mapped > 0) {
+    return mapped;
+  }
+  const bars = session?.bars || [];
+  if (bars.length >= 2) {
+    const last = Number(bars[bars.length - 1]?.time);
+    const prev = Number(bars[bars.length - 2]?.time);
+    const delta = last - prev;
+    if (Number.isFinite(delta) && delta > 0) {
+      return delta;
+    }
+  }
+  return 3600;
+}
+
+function getChartPriceByClientY(clientY) {
+  const rect = priceContainer.getBoundingClientRect();
+  const y = clientY - rect.top;
+  if (y < 0 || y > rect.height) {
+    return null;
+  }
+  const price = candleSeries.coordinateToPrice(y);
+  return Number.isFinite(price) && price > 0 ? Number(price) : null;
+}
+
+function getPredictionGuideHandle(clientY) {
+  const entry = toNumberOrNull(el.entryPriceLimit.value);
+  const stop = toNumberOrNull(el.slPrice.value);
+  const take = toNumberOrNull(el.tpPrice.value);
+  if (!entry || !stop || !take) {
+    return null;
+  }
+
+  const rect = priceContainer.getBoundingClientRect();
+  const y = clientY - rect.top;
+  const candidates = [
+    { id: "entry", price: entry },
+    { id: "stop", price: stop },
+    { id: "take", price: take },
+  ];
+
+  let best = null;
+  let bestDist = Number.POSITIVE_INFINITY;
+  for (const item of candidates) {
+    const coordinate = candleSeries.priceToCoordinate(item.price);
+    if (!Number.isFinite(coordinate)) {
+      continue;
+    }
+    const dist = Math.abs(Number(coordinate) - y);
+    if (dist < bestDist) {
+      best = item.id;
+      bestDist = dist;
+    }
+  }
+  return bestDist <= 10 ? best : null;
+}
+
+function applyPredictionGuideDrag(target, price) {
+  let entry = toNumberOrNull(el.entryPriceLimit.value);
+  let stop = toNumberOrNull(el.slPrice.value);
+  let take = toNumberOrNull(el.tpPrice.value);
+  const side = getSideValue();
+
+  if (!entry || entry <= 0 || !stop || stop <= 0 || !take || take <= 0) {
+    const anchor = price || getLastVisibleClosePrice();
+    if (!seedPredictionInputs(side, anchor)) {
+      return;
+    }
+    entry = toNumberOrNull(el.entryPriceLimit.value);
+    stop = toNumberOrNull(el.slPrice.value);
+    take = toNumberOrNull(el.tpPrice.value);
+  }
+  if (!entry || !stop || !take) {
+    return;
+  }
+
+  if (target === "entry") {
+    entry = price;
+  } else if (target === "stop") {
+    stop = price;
+  } else if (target === "take") {
+    take = price;
+  } else {
+    return;
+  }
+
+  const eps = Math.max(Math.abs(entry) * 1e-6, 1e-8);
+  if (side === "long") {
+    stop = Math.min(stop, entry - eps);
+    take = Math.max(take, entry + eps);
+  } else {
+    take = Math.min(take, entry - eps);
+    stop = Math.max(stop, entry + eps);
+  }
+
+  el.entryPriceLimit.value = formatInputPrice(entry);
+  el.slPrice.value = formatInputPrice(stop);
+  el.tpPrice.value = formatInputPrice(take);
+  renderPredictionMetrics();
+}
+
+function onPriceChartPointerDown(event) {
+  if (event.button !== 0) {
+    return;
+  }
+  if (!canUseChartPredictionTool()) {
+    return;
+  }
+  const target = getPredictionGuideHandle(event.clientY);
+  if (!target) {
+    return;
+  }
+  state.predictionGuideDragTarget = target;
+  state.predictionGuideDragRange = priceChart.timeScale().getVisibleRange() || null;
+  priceContainer.classList.add("guide-dragging");
+  event.preventDefault();
+}
+
+function onPriceChartPointerMove(event) {
+  if (!state.predictionGuideDragTarget) {
+    return;
+  }
+  const nextPrice = getChartPriceByClientY(event.clientY);
+  if (!nextPrice) {
+    return;
+  }
+  applyPredictionGuideDrag(state.predictionGuideDragTarget, nextPrice);
+  event.preventDefault();
+}
+
+function onPriceChartPointerUp() {
+  state.predictionGuideDragTarget = null;
+  state.predictionGuideDragRange = null;
+  priceContainer.classList.remove("guide-dragging");
 }
 
 function normalizeSlTpForSide() {
@@ -1252,6 +1603,7 @@ function renderPredictionMetrics() {
         String(el.tpPrice.value || "").trim()
     );
     el.predictionMetrics.textContent = hasAnyInput ? p.message : t("prediction.metrics_hint");
+    hidePredictionGuide();
     return p;
   }
 
@@ -1274,6 +1626,7 @@ function renderPredictionMetrics() {
       slRoi: p.slRoi.toFixed(2),
     }),
   ].join("\n");
+  drawPredictionGuide(p);
   return p;
 }
 
@@ -1300,6 +1653,153 @@ function removePositionZones() {
   if (state.positionZones.loss) {
     priceChart.removeSeries(state.positionZones.loss);
     state.positionZones.loss = null;
+  }
+}
+
+function removePredictionGuideLines() {
+  if (state.predictionGuideLines.entry) {
+    candleSeries.removePriceLine(state.predictionGuideLines.entry);
+    state.predictionGuideLines.entry = null;
+  }
+  if (state.predictionGuideLines.stop) {
+    candleSeries.removePriceLine(state.predictionGuideLines.stop);
+    state.predictionGuideLines.stop = null;
+  }
+  if (state.predictionGuideLines.take) {
+    candleSeries.removePriceLine(state.predictionGuideLines.take);
+    state.predictionGuideLines.take = null;
+  }
+}
+
+function removePredictionGuideZones() {
+  if (state.predictionGuideZones.profit) {
+    priceChart.removeSeries(state.predictionGuideZones.profit);
+    state.predictionGuideZones.profit = null;
+  }
+  if (state.predictionGuideZones.loss) {
+    priceChart.removeSeries(state.predictionGuideZones.loss);
+    state.predictionGuideZones.loss = null;
+  }
+}
+
+function hidePredictionGuide() {
+  removePredictionGuideZones();
+  removePredictionGuideLines();
+}
+
+function upsertPredictionGuideLine(key, options) {
+  const current = state.predictionGuideLines[key];
+  if (current && typeof current.applyOptions === "function") {
+    current.applyOptions(options);
+    return;
+  }
+  state.predictionGuideLines[key] = candleSeries.createPriceLine(options);
+}
+
+function ensurePredictionGuideZones() {
+  if (!state.predictionGuideZones.profit) {
+    state.predictionGuideZones.profit = priceChart.addSeries(LightweightCharts.BaselineSeries, {
+      baseValue: { type: "price", price: 0 },
+      topLineColor: "rgba(62, 204, 142, 0.55)",
+      topFillColor1: "rgba(62, 204, 142, 0.40)",
+      topFillColor2: "rgba(62, 204, 142, 0.18)",
+      bottomLineColor: "rgba(62, 204, 142, 0.55)",
+      bottomFillColor1: "rgba(62, 204, 142, 0.40)",
+      bottomFillColor2: "rgba(62, 204, 142, 0.18)",
+      lineWidth: 1,
+      crosshairMarkerVisible: false,
+      lastValueVisible: false,
+      priceLineVisible: false,
+    });
+  }
+  if (!state.predictionGuideZones.loss) {
+    state.predictionGuideZones.loss = priceChart.addSeries(LightweightCharts.BaselineSeries, {
+      baseValue: { type: "price", price: 0 },
+      topLineColor: "rgba(239, 83, 83, 0.55)",
+      topFillColor1: "rgba(239, 83, 83, 0.38)",
+      topFillColor2: "rgba(239, 83, 83, 0.16)",
+      bottomLineColor: "rgba(239, 83, 83, 0.55)",
+      bottomFillColor1: "rgba(239, 83, 83, 0.38)",
+      bottomFillColor2: "rgba(239, 83, 83, 0.16)",
+      lineWidth: 1,
+      crosshairMarkerVisible: false,
+      lastValueVisible: false,
+      priceLineVisible: false,
+    });
+  }
+}
+
+function drawPredictionGuide(preview = null) {
+  if (!state.session || state.session.prediction || !state.session.bars?.length) {
+    hidePredictionGuide();
+    return;
+  }
+  const p = preview && preview.ok ? preview : computePredictionPreview();
+  if (!p.ok) {
+    hidePredictionGuide();
+    return;
+  }
+
+  const preservedRange = priceChart.timeScale().getVisibleRange();
+
+  upsertPredictionGuideLine("entry", {
+    price: Number(p.entry),
+    color: "#64b5f6",
+    lineWidth: 1,
+    lineStyle: LightweightCharts.LineStyle.Dashed,
+    axisLabelVisible: true,
+    title: "ENTRY",
+  });
+  upsertPredictionGuideLine("stop", {
+    price: Number(p.stop),
+    color: "#ef5350",
+    lineWidth: 1,
+    lineStyle: LightweightCharts.LineStyle.Dashed,
+    axisLabelVisible: true,
+    title: "SL",
+  });
+  upsertPredictionGuideLine("take", {
+    price: Number(p.take),
+    color: "#26a69a",
+    lineWidth: 1,
+    lineStyle: LightweightCharts.LineStyle.Dashed,
+    axisLabelVisible: true,
+    title: "TP",
+  });
+
+  const bars = state.session.bars;
+  const lastTime = Number(bars[bars.length - 1]?.time);
+  const stepSec = getPredictionFutureStepSeconds(state.session);
+  const futureBars = PREDICTION_FUTURE_BARS;
+  const startTime = lastTime;
+  const endTime = startTime + stepSec * futureBars;
+  if (!Number.isFinite(startTime) || !Number.isFinite(endTime) || endTime < startTime) {
+    return;
+  }
+
+  const zoneData = (value) => [
+    { time: startTime, value },
+    { time: endTime, value },
+  ];
+
+  ensurePredictionGuideZones();
+  state.predictionGuideZones.profit.applyOptions({
+    baseValue: { type: "price", price: Number(p.entry) },
+  });
+  state.predictionGuideZones.profit.setData(zoneData(Number(p.take)));
+
+  state.predictionGuideZones.loss.applyOptions({
+    baseValue: { type: "price", price: Number(p.entry) },
+  });
+  state.predictionGuideZones.loss.setData(zoneData(Number(p.stop)));
+
+  // During SL/TP dragging, keep viewport stable and never auto-jump.
+  if (state.predictionGuideDragTarget && state.predictionGuideDragRange) {
+    applyTimeRange(state.predictionGuideDragRange);
+    return;
+  }
+  if (preservedRange) {
+    applyTimeRange(preservedRange);
   }
 }
 
@@ -1431,7 +1931,9 @@ function drawPositionZones(session) {
   const take = Number(trade.take_profit_price);
   const prediction = session.prediction;
   const startTime = Number(trade.entry_time ?? prediction.entry_time);
-  const endTime = Number(session.bars[session.bars.length - 1]?.time ?? startTime);
+  const stepSec = getPredictionFutureStepSeconds(session);
+  const minEndTime = startTime + stepSec * PREDICTION_FUTURE_BARS;
+  const endTime = Math.max(Number(session.bars[session.bars.length - 1]?.time ?? startTime), minEndTime);
   if (!Number.isFinite(startTime) || !Number.isFinite(endTime) || endTime < startTime) {
     return;
   }
@@ -1538,17 +2040,13 @@ function setControlsDisabled(disabled) {
     el.startDate,
     el.endDate,
     el.visibleBars,
-    el.hiddenBars,
-    el.createSessionBtn,
     el.refreshRandomBtn,
     el.indicatorSelect,
     el.addIndicatorBtn,
-    el.submitPredictionBtn,
-    el.stepBtn,
-    el.step5Btn,
     el.playBtn,
     el.pauseBtn,
     el.speedMs,
+    el.predictionModeSelect,
     el.entryPriceLimit,
     el.marginUsdt,
     el.leverage,
@@ -1556,7 +2054,9 @@ function setControlsDisabled(disabled) {
     el.tpPrice,
     el.prioritySelect,
   ].forEach((node) => {
-    node.disabled = disabled;
+    if (node) {
+      node.disabled = disabled;
+    }
   });
   if (el.indicatorsPanel) {
     el.indicatorsPanel.querySelectorAll("input, button, select").forEach((node) => {
@@ -1748,7 +2248,17 @@ async function refreshIndicators() {
   if (!state.session) {
     return;
   }
-  const preservedRange = priceChart.timeScale().getVisibleLogicalRange();
+  const refreshToken = state.indicatorRefreshToken + 1;
+  state.indicatorRefreshToken = refreshToken;
+  const expectedSessionId = state.session.session_id;
+  const expectedVersion = state.sessionVersion;
+  const preservedRangeRaw = priceChart.timeScale().getVisibleLogicalRange();
+  const preservedRange =
+    preservedRangeRaw &&
+    Number.isFinite(preservedRangeRaw.from) &&
+    Number.isFinite(preservedRangeRaw.to)
+      ? preservedRangeRaw
+      : null;
   state.isRefreshingIndicators = true;
   try {
     clearIndicators();
@@ -1760,9 +2270,25 @@ async function refreshIndicators() {
 
     let idx = 0;
     for (const cfg of configs) {
+      if (
+        refreshToken !== state.indicatorRefreshToken ||
+        !state.session ||
+        state.sessionVersion !== expectedVersion ||
+        state.session.session_id !== expectedSessionId
+      ) {
+        return;
+      }
       const data = await apiGet(
-        `/api/replay/sessions/${state.session.session_id}/indicator?${buildIndicatorQuery(cfg)}`
+        `/api/replay/sessions/${expectedSessionId}/indicator?${buildIndicatorQuery(cfg)}`
       );
+      if (
+        refreshToken !== state.indicatorRefreshToken ||
+        !state.session ||
+        state.sessionVersion !== expectedVersion ||
+        state.session.session_id !== expectedSessionId
+      ) {
+        return;
+      }
       const drawOnSub = isSubPaneIndicator(cfg);
 
       for (const seriesDef of data.series) {
@@ -1824,14 +2350,31 @@ async function refreshIndicators() {
       }
     }
   } finally {
-    state.isRefreshingIndicators = false;
+    if (refreshToken === state.indicatorRefreshToken) {
+      state.isRefreshingIndicators = false;
+    }
+  }
+
+  if (
+    refreshToken !== state.indicatorRefreshToken ||
+    !state.session ||
+    state.sessionVersion !== expectedVersion ||
+    state.session.session_id !== expectedSessionId
+  ) {
+    return;
   }
 
   if (preservedRange) {
     state.isRangeSyncing = true;
     try {
       priceChart.timeScale().setVisibleLogicalRange(preservedRange);
-      indicatorChart.timeScale().setVisibleLogicalRange(preservedRange);
+      if (state.subIndicatorSeries.length > 0) {
+        try {
+          indicatorChart.timeScale().setVisibleLogicalRange(preservedRange);
+        } catch (_err) {
+          // Ignore transient pane sync errors when indicator pane has no ready data.
+        }
+      }
     } finally {
       state.isRangeSyncing = false;
     }
@@ -1841,35 +2384,70 @@ async function refreshIndicators() {
 }
 
 function renderSession(session, fit = false) {
+  const prevSessionId = state.session?.session_id || null;
+  const prevBarsCount = Array.isArray(state.session?.bars) ? state.session.bars.length : 0;
+  const prevHasPrediction = Boolean(state.session?.prediction);
   state.session = session;
 
   const bars = session.bars || [];
+  const stepSec = getPredictionFutureStepSeconds(session);
+  const lastTime = Number(bars[bars.length - 1]?.time ?? 0);
+  const futureSlots = [];
+  // Keep right-side forecast space only before prediction submission (placement stage).
+  if (!session.prediction && bars.length > 0 && Number.isFinite(lastTime) && Number.isFinite(stepSec) && stepSec > 0) {
+    for (let i = 1; i <= PREDICTION_FUTURE_BARS; i += 1) {
+      futureSlots.push({ time: lastTime + stepSec * i });
+    }
+  }
   state.barsByTime = new Map(bars.map((b) => [Number(b.time), b]));
   candleSeries.setData(
-    bars.map((b) => ({
-      time: b.time,
-      open: b.open,
-      high: b.high,
-      low: b.low,
-      close: b.close,
-    }))
+    [
+      ...bars.map((b) => ({
+        time: b.time,
+        open: b.open,
+        high: b.high,
+        low: b.low,
+        close: b.close,
+      })),
+      ...futureSlots,
+    ]
   );
 
   volumeSeries.setData(
-    bars.map((b) => ({
-      time: b.time,
-      value: b.volume,
-      color: b.close >= b.open ? "rgba(38,166,154,0.55)" : "rgba(239,83,80,0.55)",
-    }))
+    [
+      ...bars.map((b) => ({
+        time: b.time,
+        value: b.volume,
+        color: b.close >= b.open ? "rgba(38,166,154,0.55)" : "rgba(239,83,80,0.55)",
+      })),
+      ...futureSlots,
+    ]
   );
 
-  if (fit) {
+  updatePositionOverlay(session);
+  if (session.prediction) {
+    hidePredictionGuide();
+    clearChartPredictionPlacementMode();
+  } else {
+    drawPredictionGuide();
+  }
+  const isNewSession = session.session_id !== prevSessionId;
+  const predictionJustActivated = !prevHasPrediction && Boolean(session.prediction);
+  if (fit || isNewSession) {
     priceChart.timeScale().fitContent();
     indicatorChart.timeScale().fitContent();
     syncIndicatorRangeFromPrice();
   }
-
-  updatePositionOverlay(session);
+  if (predictionJustActivated) {
+    centerLatestForReplayStart(session);
+  } else if (session.prediction) {
+    const currentBarsCount = Array.isArray(session.bars) ? session.bars.length : 0;
+    const replayAdvanced = currentBarsCount > prevBarsCount;
+    if (replayAdvanced) {
+      // Keep playback viewport stable like the previous stable version.
+      syncIndicatorRangeFromPrice();
+    }
+  }
   el.resultBox.textContent = formatResult(session);
 
   if (session.done) {
@@ -1894,12 +2472,18 @@ async function loadTimeframes() {
     el.timeframe.innerHTML = "";
     return false;
   }
+  const previous = el.timeframe.value;
   const data = await apiGet(`/api/market/timeframes?pair=${encodeURIComponent(pair)}`);
   if (!data.timeframes || data.timeframes.length === 0) {
     el.timeframe.innerHTML = "";
     return false;
   }
   el.timeframe.innerHTML = data.timeframes.map((t) => `<option value="${t}">${t}</option>`).join("");
+  if (previous && data.timeframes.includes(previous)) {
+    el.timeframe.value = previous;
+  } else if (data.timeframes.includes("4h")) {
+    el.timeframe.value = "4h";
+  }
   return true;
 }
 
@@ -1927,39 +2511,56 @@ async function loadRange(options = {}) {
 }
 
 async function createSession() {
-  stopAutoplay();
-  clearIndicators();
-  hidePositionOverlay();
-
-  const payload = {
-    pair: el.pair.value,
-    timeframe: el.timeframe.value,
-    range_start: dateToUnix(el.startDate.value, false),
-    range_end: dateToUnix(el.endDate.value, true),
-    visible_bars: Number(el.visibleBars.value),
-    hidden_bars: Number(el.hiddenBars.value),
-  };
-
-  if (!payload.range_start || !payload.range_end || payload.range_start >= payload.range_end) {
-    throw new Error(t("error.invalid_date_range"));
+  if (state.sessionLoadingPromise) {
+    await state.sessionLoadingPromise;
   }
 
-  setStatus(t("status.creating_session"));
-  const session = await apiPost("/api/replay/sessions", payload);
-  if (session?.bars?.length) {
-    const ref = Number(session.bars[session.bars.length - 1]?.close);
-    if (Number.isFinite(ref) && ref > 0) {
-      const slFactor = 1 - DEFAULT_SL_PCT / 100;
-      const tpFactor = 1 + (DEFAULT_SL_PCT * DEFAULT_RR) / 100;
-      el.entryPriceLimit.value = ref.toFixed(4);
-      el.slPrice.value = (ref * slFactor).toFixed(4);
-      el.tpPrice.value = (ref * tpFactor).toFixed(4);
+  const run = (async () => {
+    stopAutoplay();
+    const myVersion = state.sessionVersion + 1;
+    state.sessionVersion = myVersion;
+    clearIndicators();
+    hidePositionOverlay();
+    hidePredictionGuide();
+    clearChartPredictionPlacementMode();
+    onPriceChartPointerUp();
+
+    const payload = {
+      pair: el.pair.value,
+      timeframe: el.timeframe.value,
+      range_start: dateToUnix(el.startDate.value, false),
+      range_end: dateToUnix(el.endDate.value, true),
+      visible_bars: Number(el.visibleBars.value),
+    };
+
+    if (!payload.range_start || !payload.range_end || payload.range_start >= payload.range_end) {
+      throw new Error(t("error.invalid_date_range"));
+    }
+
+    setStatus(t("status.creating_session"));
+    const session = await apiPost("/api/replay/sessions", payload);
+    if (myVersion !== state.sessionVersion) {
+      return;
+    }
+    renderSession(session, true);
+    applyPredictionModePreset(true);
+    renderPredictionMetrics();
+    try {
+      await refreshIndicators();
+    } catch (err) {
+      setStatus(t("status.indicator_failed", { err: err.message || err }));
+    }
+    setStatus(t("status.session_created"));
+  })();
+
+  state.sessionLoadingPromise = run;
+  try {
+    await run;
+  } finally {
+    if (state.sessionLoadingPromise === run) {
+      state.sessionLoadingPromise = null;
     }
   }
-  renderPredictionMetrics();
-  renderSession(session, true);
-  await refreshIndicators();
-  setStatus(t("status.session_created"));
 }
 
 async function refreshRandomSession() {
@@ -1972,6 +2573,8 @@ async function submitPrediction() {
   if (!state.session) {
     throw new Error(t("error.create_session_first"));
   }
+  const sid = state.session.session_id;
+  const version = state.sessionVersion;
   normalizeSlTpForSide();
   const side = getSideValue();
   const preview = renderPredictionMetrics();
@@ -1991,7 +2594,10 @@ async function submitPrediction() {
   };
 
   setStatus(t("status.submitting_prediction"));
-  const session = await apiPost(`/api/replay/sessions/${state.session.session_id}/prediction`, payload);
+  const session = await apiPost(`/api/replay/sessions/${sid}/prediction`, payload);
+  if (version !== state.sessionVersion || !state.session || state.session.session_id !== sid) {
+    return;
+  }
   renderSession(session, false);
   setStatus(
     t("status.prediction_submitted", {
@@ -2005,15 +2611,24 @@ async function step(steps = 1) {
   if (!state.session) {
     throw new Error(t("error.create_session_first"));
   }
+  const sid = state.session.session_id;
+  const version = state.sessionVersion;
   if (state.isStepping) {
     return;
   }
 
   state.isStepping = true;
   try {
-    const session = await apiPost(`/api/replay/sessions/${state.session.session_id}/step`, { steps });
+    const session = await apiPost(`/api/replay/sessions/${sid}/step`, { steps });
+    if (version !== state.sessionVersion || !state.session || state.session.session_id !== sid) {
+      return;
+    }
     renderSession(session, false);
-    await refreshIndicators();
+    try {
+      await refreshIndicators();
+    } catch (err) {
+      setStatus(t("status.indicator_failed", { err: err.message || err }));
+    }
   } finally {
     state.isStepping = false;
   }
@@ -2021,7 +2636,7 @@ async function step(steps = 1) {
 
 function stopAutoplay() {
   if (state.autoplayTimer) {
-    clearInterval(state.autoplayTimer);
+    clearTimeout(state.autoplayTimer);
     state.autoplayTimer = null;
   }
 }
@@ -2035,7 +2650,10 @@ function startAutoplay() {
   const speed = Math.max(50, Number(el.speedMs.value) || 250);
   setStatus(t("status.auto_play_started", { speed }));
 
-  state.autoplayTimer = setInterval(async () => {
+  const tick = async () => {
+    if (!state.autoplayTimer) {
+      return;
+    }
     if (!state.session || state.session.done) {
       stopAutoplay();
       return;
@@ -2045,42 +2663,67 @@ function startAutoplay() {
     } catch (err) {
       stopAutoplay();
       setStatus(String(err.message || err));
+      return;
     }
-  }, speed);
+    if (!state.autoplayTimer) {
+      return;
+    }
+    state.autoplayTimer = setTimeout(tick, speed);
+  };
+
+  state.autoplayTimer = setTimeout(tick, speed);
+}
+
+async function startReplayFlow() {
+  if (state.sessionLoadingPromise) {
+    await state.sessionLoadingPromise;
+  }
+
+  if (!state.session || state.session.done) {
+    setStatus(t("status.replay_preparing"));
+    await createSession();
+  } else {
+    applyPredictionModePreset(false);
+  }
+
+  if (!state.session) {
+    throw new Error(t("error.create_session_first"));
+  }
+
+  if (!state.session?.prediction) {
+    const preview = renderPredictionMetrics();
+    if (!preview.ok) {
+      throw new Error(preview.message);
+    }
+    await submitPrediction();
+  }
+  startAutoplay();
 }
 
 function wireEvents() {
-  el.pair.addEventListener("change", async () => {
+  el.pair?.addEventListener("change", async () => {
     await loadTimeframes();
     await loadRange();
+    applyPredictionModePreset(true);
   });
-  el.langSelect.addEventListener("change", () => {
+  el.langSelect?.addEventListener("change", () => {
     setLang(el.langSelect.value);
   });
-
-  el.timeframe.addEventListener("change", loadRange);
-  document.querySelectorAll('input[name="side"]').forEach((node) => {
-    node.addEventListener("change", () => {
-      normalizeSlTpForSide();
-      renderPredictionMetrics();
-    });
+  el.timeframe?.addEventListener("change", async () => {
+    await loadRange();
+    applyPredictionModePreset(true);
+  });
+  el.predictionModeSelect?.addEventListener("change", () => {
+    applyPredictionModePreset(true);
   });
   [el.entryPriceLimit, el.marginUsdt, el.leverage, el.slPrice, el.tpPrice].forEach((node) => {
-    node.addEventListener("input", renderPredictionMetrics);
+    node?.addEventListener("input", renderPredictionMetrics);
   });
-  el.addIndicatorBtn.addEventListener("click", () => {
+  el.addIndicatorBtn?.addEventListener("click", () => {
     addIndicatorConfig(el.indicatorSelect.value);
   });
 
-  el.createSessionBtn.addEventListener("click", async () => {
-    try {
-      await createSession();
-    } catch (err) {
-      setStatus(t("status.create_failed", { err: err.message || err }));
-    }
-  });
-
-  el.refreshRandomBtn.addEventListener("click", async () => {
+  el.refreshRandomBtn?.addEventListener("click", async () => {
     try {
       await refreshRandomSession();
     } catch (err) {
@@ -2088,43 +2731,23 @@ function wireEvents() {
     }
   });
 
-  el.submitPredictionBtn.addEventListener("click", async () => {
+  el.playBtn?.addEventListener("click", async () => {
     try {
-      await submitPrediction();
-    } catch (err) {
-      setStatus(t("status.prediction_failed", { err: err.message || err }));
-    }
-  });
-
-  el.stepBtn.addEventListener("click", async () => {
-    try {
-      await step(1);
-    } catch (err) {
-      setStatus(t("status.step_failed", { err: err.message || err }));
-    }
-  });
-
-  el.step5Btn.addEventListener("click", async () => {
-    try {
-      await step(5);
-    } catch (err) {
-      setStatus(t("status.step_failed", { err: err.message || err }));
-    }
-  });
-
-  el.playBtn.addEventListener("click", () => {
-    try {
-      startAutoplay();
+      await startReplayFlow();
     } catch (err) {
       setStatus(t("status.play_failed", { err: err.message || err }));
     }
   });
 
-  el.pauseBtn.addEventListener("click", () => {
+  el.pauseBtn?.addEventListener("click", () => {
     stopAutoplay();
     setStatus(t("status.paused"));
   });
 
+  priceContainer.addEventListener("pointerdown", onPriceChartPointerDown);
+  window.addEventListener("pointermove", onPriceChartPointerMove);
+  window.addEventListener("pointerup", onPriceChartPointerUp);
+  window.addEventListener("pointercancel", onPriceChartPointerUp);
   window.addEventListener("resize", resizeCharts);
 }
 

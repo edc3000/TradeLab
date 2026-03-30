@@ -70,9 +70,39 @@ body {
 .toolbar {
   padding: 12px;
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 10px;
   align-items: end;
+  overflow-x: auto;
+}
+
+.toolbar-actions {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: end;
+  gap: 8px;
+  flex-wrap: nowrap;
+  flex: 0 0 auto;
+}
+
+.toolbar > .field-group {
+  flex: 0 0 auto;
+}
+
+.toolbar-actions .btn {
+  height: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.toolbar-speed {
+  width: 122px;
+  min-width: 122px;
+}
+
+.toolbar-speed input {
+  height: 40px;
 }
 
 .field-group {
@@ -365,6 +395,10 @@ select:focus {
   flex-wrap: wrap;
 }
 
+.chart.price.guide-dragging {
+  cursor: ns-resize;
+}
+
 pre {
   margin: 0;
   white-space: pre-wrap;
@@ -381,10 +415,6 @@ pre {
   border-radius: 8px;
   background: rgba(11, 22, 33, 0.75);
   min-height: 72px;
-}
-
-.prediction-panel #submitPredictionBtn {
-  margin-top: 10px;
 }
 
 @media (max-width: 1080px) {

@@ -33,11 +33,11 @@ app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 class SessionCreateRequest(BaseModel):
     pair: str = Field(default="BINANCE:BTC/USDT")
-    timeframe: str = Field(default="1h")
+    timeframe: str = Field(default="4h")
     range_start: int
     range_end: int
     visible_bars: int = Field(default=120, ge=20, le=500)
-    hidden_bars: int = Field(default=120, ge=1, le=2000)
+    hidden_bars: int | None = Field(default=None, ge=1, le=2000)
     seed: int | None = None
 
 

@@ -41,24 +41,27 @@
           <label for="visibleBars" data-i18n="toolbar.visible">Visible</label>
           <input id="visibleBars" type="number" min="20" value="120" />
         </div>
-        <div class="field-group small">
-          <label for="hiddenBars" data-i18n="toolbar.replay">Replay</label>
-          <input id="hiddenBars" type="number" min="1" value="120" />
+        <div class="toolbar-actions">
+          <button
+            id="refreshRandomBtn"
+            class="btn icon-btn"
+            title="刷新随机K线"
+            aria-label="刷新随机K线"
+            data-i18n-title="toolbar.refreshRandom"
+            data-i18n-aria="toolbar.refreshRandom"
+          >
+            <svg class="refresh-icon" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M21 12a9 9 0 1 1-2.64-6.36" />
+              <path d="M21 4v6h-6" />
+            </svg>
+          </button>
+          <button id="playBtn" class="btn btn-primary" data-i18n="replay.play">Replay</button>
+          <button id="pauseBtn" class="btn" data-i18n="replay.pause">Pause</button>
+          <div class="field-group small toolbar-speed">
+            <label for="speedMs" data-i18n="replay.speed">Speed (ms)</label>
+            <input id="speedMs" type="number" min="50" step="50" value="250" />
+          </div>
         </div>
-        <button id="createSessionBtn" class="btn btn-primary" data-i18n="toolbar.createSession">Create Session</button>
-        <button
-          id="refreshRandomBtn"
-          class="btn icon-btn"
-          title="刷新随机K线"
-          aria-label="刷新随机K线"
-          data-i18n-title="toolbar.refreshRandom"
-          data-i18n-aria="toolbar.refreshRandom"
-        >
-          <svg class="refresh-icon" viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M21 12a9 9 0 1 1-2.64-6.36" />
-            <path d="M21 4v6h-6" />
-          </svg>
-        </button>
       </section>
 
       <section class="layout-grid">
@@ -83,9 +86,12 @@
         <div class="side-panel">
           <section class="card panel prediction-panel">
             <h3 data-i18n="prediction.title">Prediction</h3>
-            <div class="inline-fields">
-              <label><input type="radio" name="side" value="long" checked /> <span data-i18n="prediction.long">Long</span></label>
-              <label><input type="radio" name="side" value="short" /> <span data-i18n="prediction.short">Short</span></label>
+            <div class="field-group">
+              <label for="predictionModeSelect" data-i18n="prediction.mode">Prediction Type</label>
+              <select id="predictionModeSelect">
+                <option value="long" data-i18n="prediction.modeLong">Long Position</option>
+                <option value="short" data-i18n="prediction.modeShort">Short Position</option>
+              </select>
             </div>
             <div class="field-group">
               <label for="entryPriceLimit" data-i18n="prediction.entryLimit">Entry Price (Limit)</label>
@@ -115,23 +121,6 @@
               </select>
             </div>
             <pre id="predictionMetrics" class="prediction-metrics">Set entry/SL/TP to calculate RR.</pre>
-            <button id="submitPredictionBtn" class="btn btn-primary" data-i18n="prediction.submit">Submit Prediction</button>
-          </section>
-
-          <section class="card panel replay-panel">
-            <h3 data-i18n="replay.title">Replay Control</h3>
-            <div class="inline-fields">
-              <button id="stepBtn" class="btn">Step +1</button>
-              <button id="step5Btn" class="btn">Step +5</button>
-            </div>
-            <div class="inline-fields">
-              <button id="playBtn" class="btn btn-primary" data-i18n="replay.play">Auto Play</button>
-              <button id="pauseBtn" class="btn" data-i18n="replay.pause">Pause</button>
-            </div>
-            <div class="field-group small">
-              <label for="speedMs" data-i18n="replay.speed">Speed (ms)</label>
-              <input id="speedMs" type="number" min="50" step="50" value="250" />
-            </div>
           </section>
 
           <section class="card panel result-panel">

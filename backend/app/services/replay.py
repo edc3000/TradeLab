@@ -331,23 +331,36 @@ def create_session(
     range_start: int,
     range_end: int,
     visible_bars: int,
-    hidden_bars: int,
+    hidden_bars: int | None,
     seed: int | None,
 ) -> dict[str, Any]:
     if visible_bars < 20:
         raise ReplayError("visible_bars must be at least 20")
-    if hidden_bars < 1:
-        raise ReplayError("hidden_bars must be at least 1")
 
     candles = repository.get_candles(pair, timeframe, range_start, range_end)
-    need = visible_bars + hidden_bars
-    if len(candles) < need:
-        raise ReplayError(f"Not enough candles in range: need {need}, got {len(candles)}")
+    if hidden_bars is None:
+        min_need = visible_bars + 1
+        if len(candles) < min_need:
+            raise ReplayError(f"Not enough candles in range: need {min_need}, got {len(candles)}")
+    else:
+        if hidden_bars < 1:
+            raise ReplayError("hidden_bars must be at least 1")
+        need = visible_bars + hidden_bars
+        if len(candles) < need:
+            raise ReplayError(f"Not enough candles in range: need {need}, got {len(candles)}")
 
     seed_value = seed if seed is not None else random.randint(1, 2_000_000_000)
     rng = random.Random(seed_value)
-    start_index = rng.randint(0, len(candles) - need)
-    scenario = candles[start_index : start_index + need]
+    if hidden_bars is None:
+        max_start = len(candles) - visible_bars - 1
+        start_index = rng.randint(0, max_start)
+        scenario = candles[start_index:]
+        hidden_count = len(scenario) - visible_bars
+    else:
+        need = visible_bars + hidden_bars
+        start_index = rng.randint(0, len(candles) - need)
+        scenario = candles[start_index : start_index + need]
+        hidden_count = hidden_bars
 
     session = {
         "id": str(uuid4()),
@@ -358,7 +371,7 @@ def create_session(
         "scenario_start": int(scenario[0]["open_time"]),
         "scenario_end": int(scenario[-1]["open_time"]),
         "visible_bars": visible_bars,
-        "hidden_bars": hidden_bars,
+        "hidden_bars": hidden_count,
         "cursor": visible_bars - 1,
         "seed": seed_value,
         "status": "waiting_prediction",
