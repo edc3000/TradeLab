@@ -1,5 +1,8 @@
 const state = {
   session: null,
+  accountStats: null,
+  accounts: [],
+  selectedAccountId: null,
   isStepping: false,
   autoplayTimer: null,
   priceIndicatorSeries: [],
@@ -40,6 +43,8 @@ const state = {
 
 const DEFAULT_SL_PCT = 1.5;
 const DEFAULT_RR = 1.5;
+const DEFAULT_FEE_BPS = 5.0;
+const DEFAULT_SLIPPAGE_BPS = 2.0;
 const PREDICTION_FUTURE_BARS = 24;
 const TIMEFRAME_SECONDS = {
   "5m": 300,
@@ -57,12 +62,31 @@ const TIMEFRAME_SECONDS = {
   "1M": 2592000,
 };
 const LANG_STORAGE_KEY = "tradelab_lang_v1";
+const ACCOUNT_STORAGE_KEY = "tradelab_account_v1";
 const INDICATOR_STORAGE_KEY = "tradelab_indicator_configs_v1";
 const INDICATOR_NAMES = ["sma", "ema", "boll", "rsi", "macd"];
 const I18N = {
   zh: {
     "brand.title": "TradeLab Replay",
     "brand.subtitle": "离线历史回放训练器",
+    "account.title": "账户统计",
+    "account.label": "账户",
+    "account.new": "新建账户",
+    "account.delete": "删除",
+    "account.none": "暂无账户",
+    "account.stats_empty": "请选择账户。",
+    "account.prompt_name": "请输入账户名称",
+    "account.prompt_balance": "请输入初始资金(USDT)",
+    "account.confirm_delete": "确认删除当前账户吗？",
+    "account.equity": "净值",
+    "account.available": "可用资金",
+    "account.locked": "冻结保证金",
+    "account.total_net": "累计净收益",
+    "account.total_cost": "累计成本",
+    "account.return": "收益率",
+    "account.sharpe": "夏普(按交易)",
+    "account.win_rate": "胜率",
+    "account.trades": "已结算/成交笔数",
     "toolbar.pair": "交易对",
     "toolbar.timeframe": "周期",
     "toolbar.start": "开始",
@@ -117,6 +141,8 @@ const I18N = {
     "prediction.metrics_line2": "仓位名义价值: {notional} U   数量: {qty}",
     "prediction.metrics_line3": "命中 TP: {tpPnl} U ({tpRoi}%)",
     "prediction.metrics_line4": "命中 SL: {slPnl} U ({slRoi}%)",
+    "prediction.metrics_line5": "默认成本: 手续费 {feeBps}bps + 滑点 {slippageBps}bps",
+    "prediction.metrics_line6": "命中 TP 净收益: {tpNet} U ({tpNetRoi}%) | 命中 SL 净收益: {slNet} U ({slNetRoi}%)",
     "prediction.metrics_hint": "设置 Entry/SL/TP 后自动计算 RR。",
     "replay.title": "回放控制",
     "replay.step1": "步进 +1",
@@ -137,6 +163,9 @@ const I18N = {
     "status.random_refreshed": "随机K线已刷新。",
     "status.submitting_prediction": "正在提交预测...",
     "status.prediction_submitted": "预测已提交。开仓价 {entry} | RR 1:{rr}",
+    "status.account_created": "账户已创建: {name}",
+    "status.account_deleted": "账户已删除: {name}",
+    "status.account_failed": "账户操作失败: {err}",
     "status.auto_play_started": "自动回放已启动 ({speed}ms)",
     "status.paused": "已暂停",
     "status.replay_finished": "回放完成。",
@@ -157,6 +186,7 @@ const I18N = {
       "未找到历史K线数据。\\n\\n运行下载脚本:\\npython backend/app/scripts/download_history.py --exchange binance --pair BTC/USDT --timeframe 1h --start 2024-01-01T00:00:00Z --end 2025-01-01T00:00:00Z",
     "error.invalid_date_range": "日期范围无效。",
     "error.create_session_first": "请先创建会话。",
+    "error.account_required": "请先选择账户。",
     "overlay.long_position": "多头仓位",
     "overlay.short_position": "空头仓位",
     "overlay.replaying": "回放中",
@@ -171,6 +201,8 @@ const I18N = {
     "overlay.live_r": "实时 R 倍数",
     "overlay.live_pnl": "实时PNL(U)",
     "overlay.live_roi": "实时ROI",
+    "overlay.final_gross_pnl": "最终毛PNL(U)",
+    "overlay.final_cost": "最终成本(U)",
     "overlay.final_pnl": "最终PNL(U)",
     "overlay.final_roi": "最终ROI",
     "overlay.current_status": "当前状态",
@@ -179,6 +211,24 @@ const I18N = {
   en: {
     "brand.title": "TradeLab Replay",
     "brand.subtitle": "Offline Historical Playback Trainer",
+    "account.title": "Account Stats",
+    "account.label": "Account",
+    "account.new": "New Account",
+    "account.delete": "Delete",
+    "account.none": "No account",
+    "account.stats_empty": "Select an account first.",
+    "account.prompt_name": "Enter account name",
+    "account.prompt_balance": "Enter initial balance (USDT)",
+    "account.confirm_delete": "Delete current account?",
+    "account.equity": "Equity",
+    "account.available": "Available",
+    "account.locked": "Locked Margin",
+    "account.total_net": "Total Net PNL",
+    "account.total_cost": "Total Costs",
+    "account.return": "Return",
+    "account.sharpe": "Sharpe (trade)",
+    "account.win_rate": "Win Rate",
+    "account.trades": "Settled/Filled Trades",
     "toolbar.pair": "Pair",
     "toolbar.timeframe": "Timeframe",
     "toolbar.start": "Start",
@@ -233,6 +283,8 @@ const I18N = {
     "prediction.metrics_line2": "Notional: {notional} U   Qty: {qty}",
     "prediction.metrics_line3": "At TP: {tpPnl} U ({tpRoi}%)",
     "prediction.metrics_line4": "At SL: {slPnl} U ({slRoi}%)",
+    "prediction.metrics_line5": "Default Costs: Fee {feeBps}bps + Slippage {slippageBps}bps",
+    "prediction.metrics_line6": "Net at TP: {tpNet} U ({tpNetRoi}%) | Net at SL: {slNet} U ({slNetRoi}%)",
     "prediction.metrics_hint": "Set Entry/SL/TP to calculate RR.",
     "replay.title": "Replay Control",
     "replay.step1": "Step +1",
@@ -253,6 +305,9 @@ const I18N = {
     "status.random_refreshed": "Random K-line refreshed.",
     "status.submitting_prediction": "Submitting prediction...",
     "status.prediction_submitted": "Prediction submitted. Entry {entry} | RR 1:{rr}",
+    "status.account_created": "Account created: {name}",
+    "status.account_deleted": "Account deleted: {name}",
+    "status.account_failed": "Account action failed: {err}",
     "status.auto_play_started": "Auto play started ({speed}ms)",
     "status.paused": "Paused",
     "status.replay_finished": "Replay finished.",
@@ -273,6 +328,7 @@ const I18N = {
       "No historical candles found.\\n\\nRun downloader script:\\npython backend/app/scripts/download_history.py --exchange binance --pair BTC/USDT --timeframe 1h --start 2024-01-01T00:00:00Z --end 2025-01-01T00:00:00Z",
     "error.invalid_date_range": "Invalid date range.",
     "error.create_session_first": "Create session first.",
+    "error.account_required": "Select an account first.",
     "overlay.long_position": "Long Position",
     "overlay.short_position": "Short Position",
     "overlay.replaying": "Replaying",
@@ -287,6 +343,8 @@ const I18N = {
     "overlay.live_r": "Live R",
     "overlay.live_pnl": "Live PNL (U)",
     "overlay.live_roi": "Live ROI",
+    "overlay.final_gross_pnl": "Final Gross PNL (U)",
+    "overlay.final_cost": "Final Costs (U)",
     "overlay.final_pnl": "Final PNL (U)",
     "overlay.final_roi": "Final ROI",
     "overlay.current_status": "Status",
@@ -295,6 +353,10 @@ const I18N = {
 };
 
 const el = {
+  accountPicker: document.getElementById("accountPicker"),
+  accountPickerBtn: document.getElementById("accountPickerBtn"),
+  accountMenu: document.getElementById("accountMenu"),
+  newAccountBtn: document.getElementById("newAccountBtn"),
   pair: document.getElementById("pairSelect"),
   timeframe: document.getElementById("timeframeSelect"),
   startDate: document.getElementById("startDate"),
@@ -319,11 +381,90 @@ const el = {
   statusBox: document.getElementById("statusBox"),
   resultBox: document.getElementById("resultBox"),
   positionOverlay: document.getElementById("positionOverlay"),
+  accountStatsBox: document.getElementById("accountStatsBox"),
 };
 
 const priceContainer = document.getElementById("priceChart");
 const indicatorContainer = document.getElementById("indicatorChart");
 state.lang = localStorage.getItem(LANG_STORAGE_KEY) === "en" ? "en" : "zh";
+
+function setupAccountDropdown() {
+  if (!el.accountMenu) {
+    return;
+  }
+  if (el.accountMenu.parentElement !== document.body) {
+    document.body.appendChild(el.accountMenu);
+    el.accountMenu.hidden = true;
+    el.accountMenu.style.display = "none";
+  }
+
+  const styleId = "account-dropdown-runtime-style";
+  if (!document.getElementById(styleId)) {
+    const style = document.createElement("style");
+    style.id = styleId;
+    style.textContent = `
+      #accountMenu {
+        position: fixed;
+        z-index: 1000;
+        min-width: 240px;
+        max-height: 260px;
+        overflow-y: auto;
+        border: 1px solid #2f4256;
+        border-radius: 10px;
+        background: #0f1b26;
+        box-shadow: 0 12px 28px rgba(0, 0, 0, 0.35);
+      }
+      #accountMenu[hidden] { display: none !important; }
+      #accountMenu .account-menu-item {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        padding: 6px 8px;
+        border-bottom: 1px solid rgba(66, 88, 109, 0.35);
+      }
+      #accountMenu .account-menu-item:last-child { border-bottom: 0; }
+      #accountMenu .account-menu-item.is-selected { background: rgba(40, 70, 98, 0.45); }
+      #accountMenu .account-menu-select {
+        flex: 1 1 auto;
+        border: 0;
+        background: transparent;
+        color: #d6e2f0;
+        text-align: left;
+        padding: 4px 2px;
+        cursor: pointer;
+      }
+      #accountMenu .account-menu-select:hover { color: #f1f6fc; }
+      #accountMenu .account-menu-delete {
+        width: 24px;
+        height: 24px;
+        border: 1px solid #3b5268;
+        border-radius: 6px;
+        background: #142433;
+        color: #b9ccdf;
+        line-height: 1;
+        cursor: pointer;
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.12s ease;
+      }
+      #accountMenu .account-menu-item:hover .account-menu-delete {
+        opacity: 1;
+        pointer-events: auto;
+      }
+      #accountMenu .account-menu-delete:hover {
+        background: #24374a;
+        color: #ffb1b1;
+      }
+      #accountMenu .account-menu-empty {
+        padding: 10px;
+        color: #90a6bc;
+        font-size: 0.83rem;
+      }
+    `;
+    document.head.appendChild(style);
+  }
+}
 
 function pad2(value) {
   return String(value).padStart(2, "0");
@@ -416,6 +557,12 @@ function setLang(lang) {
   applyI18n();
   renderIndicatorsPanel();
   renderPredictionMetrics();
+  if (el.accountStatsBox) {
+    el.accountStatsBox.textContent = formatAccountStats(state.accountStats);
+  }
+  void loadAccounts(getSelectedAccountId()).catch(() => {
+    // ignore i18n refresh failures for account list
+  });
   if (state.session) {
     updatePositionOverlay(state.session);
     el.resultBox.textContent = formatResult(state.session);
@@ -1573,6 +1720,21 @@ function computePredictionPreview() {
   const slPnl = side === "long" ? (stop - entry) * quantity : (entry - stop) * quantity;
   const tpRoi = (tpPnl / margin) * 100;
   const slRoi = (slPnl / margin) * 100;
+  const feeRate = DEFAULT_FEE_BPS / 10000;
+  const slippageRate = DEFAULT_SLIPPAGE_BPS / 10000;
+  const entryNotional = notional;
+  const tpExitNotional = Math.abs(quantity * take);
+  const slExitNotional = Math.abs(quantity * stop);
+  const tpFeeCost = (entryNotional + tpExitNotional) * feeRate;
+  const slFeeCost = (entryNotional + slExitNotional) * feeRate;
+  const tpSlippageCost = (entryNotional + tpExitNotional) * slippageRate;
+  const slSlippageCost = (entryNotional + slExitNotional) * slippageRate;
+  const tpCost = tpFeeCost + tpSlippageCost;
+  const slCost = slFeeCost + slSlippageCost;
+  const tpNetPnl = tpPnl - tpCost;
+  const slNetPnl = slPnl - slCost;
+  const tpNetRoi = (tpNetPnl / margin) * 100;
+  const slNetRoi = (slNetPnl / margin) * 100;
 
   return {
     ok: true,
@@ -1591,6 +1753,14 @@ function computePredictionPreview() {
     slPnl,
     tpRoi,
     slRoi,
+    feeBps: DEFAULT_FEE_BPS,
+    slippageBps: DEFAULT_SLIPPAGE_BPS,
+    tpCost,
+    slCost,
+    tpNetPnl,
+    slNetPnl,
+    tpNetRoi,
+    slNetRoi,
   };
 }
 
@@ -1624,6 +1794,16 @@ function renderPredictionMetrics() {
     t("prediction.metrics_line4", {
       slPnl: p.slPnl.toFixed(2),
       slRoi: p.slRoi.toFixed(2),
+    }),
+    t("prediction.metrics_line5", {
+      feeBps: p.feeBps.toFixed(1),
+      slippageBps: p.slippageBps.toFixed(1),
+    }),
+    t("prediction.metrics_line6", {
+      tpNet: p.tpNetPnl.toFixed(2),
+      tpNetRoi: p.tpNetRoi.toFixed(2),
+      slNet: p.slNetPnl.toFixed(2),
+      slNetRoi: p.slNetRoi.toFixed(2),
     }),
   ].join("\n");
   drawPredictionGuide(p);
@@ -1859,6 +2039,14 @@ function calcRiskReward(session) {
     trade.pnl_usdt != null ? Number(trade.pnl_usdt) : trade.reason === "entry_not_filled" ? 0 : null;
   const finalRoiPct =
     trade.roi_pct != null ? Number(trade.roi_pct) : trade.reason === "entry_not_filled" ? 0 : null;
+  const finalGrossPnlUsdt =
+    trade.gross_pnl_usdt != null
+      ? Number(trade.gross_pnl_usdt)
+      : trade.reason === "entry_not_filled"
+        ? 0
+        : null;
+  const finalCostUsdt =
+    trade.cost_usdt != null ? Number(trade.cost_usdt) : trade.reason === "entry_not_filled" ? 0 : null;
 
   return {
     side,
@@ -1874,6 +2062,8 @@ function calcRiskReward(session) {
     quantity,
     livePnlUsdt,
     liveRoiPct,
+    finalGrossPnlUsdt,
+    finalCostUsdt,
     finalPnlUsdt,
     finalRoiPct,
     isWaitingEntry,
@@ -2017,6 +2207,9 @@ function updatePositionOverlay(session) {
   const rText = metrics.liveR == null ? "--" : `${metrics.liveR.toFixed(2)} R`;
   const pnlText = metrics.livePnlUsdt == null ? "--" : `${metrics.livePnlUsdt.toFixed(2)} U`;
   const roiText = metrics.liveRoiPct == null ? "--" : `${metrics.liveRoiPct.toFixed(2)}%`;
+  const finalGrossPnlText =
+    metrics.finalGrossPnlUsdt == null ? "--" : `${metrics.finalGrossPnlUsdt.toFixed(2)} U`;
+  const finalCostText = metrics.finalCostUsdt == null ? "--" : `${metrics.finalCostUsdt.toFixed(2)} U`;
   const finalPnlText = metrics.finalPnlUsdt == null ? "--" : `${metrics.finalPnlUsdt.toFixed(2)} U`;
   const finalRoiText = metrics.finalRoiPct == null ? "--" : `${metrics.finalRoiPct.toFixed(2)}%`;
 
@@ -2027,6 +2220,8 @@ function updatePositionOverlay(session) {
     <div class="row"><span>${t("overlay.live_r")}</span><strong>${rText}</strong></div>
     <div class="row"><span>${t("overlay.live_pnl")}</span><strong>${pnlText}</strong></div>
     <div class="row"><span>${t("overlay.live_roi")}</span><strong>${roiText}</strong></div>
+    <div class="row"><span>${t("overlay.final_gross_pnl")}</span><strong>${finalGrossPnlText}</strong></div>
+    <div class="row"><span>${t("overlay.final_cost")}</span><strong>${finalCostText}</strong></div>
     <div class="row"><span>${t("overlay.final_pnl")}</span><strong>${finalPnlText}</strong></div>
     <div class="row"><span>${t("overlay.final_roi")}</span><strong>${finalRoiText}</strong></div>
     <div class="row"><span>${t("overlay.current_status")}</span><strong>${finalText}</strong></div>
@@ -2034,7 +2229,12 @@ function updatePositionOverlay(session) {
 }
 
 function setControlsDisabled(disabled) {
+  if (disabled) {
+    closeAccountMenu();
+  }
   [
+    el.accountPickerBtn,
+    el.newAccountBtn,
     el.pair,
     el.timeframe,
     el.startDate,
@@ -2099,6 +2299,274 @@ async function apiPost(path, body) {
   return data;
 }
 
+async function apiDelete(path) {
+  const res = await fetch(path, {
+    method: "DELETE",
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(data.detail || JSON.stringify(data));
+  }
+  return data;
+}
+
+function escapeHtml(text) {
+  return String(text ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
+function getSelectedAccountId() {
+  const id = String(state.selectedAccountId || "").trim();
+  return id || null;
+}
+
+function getSelectedAccount() {
+  const accountId = getSelectedAccountId();
+  if (!accountId) {
+    return null;
+  }
+  return state.accounts.find((acc) => String(acc.id) === accountId) || null;
+}
+
+function normalizeAccountId(value) {
+  const id = String(value || "").trim();
+  return id || null;
+}
+
+function isSessionAlignedWithSelectedAccount(session = state.session) {
+  if (!session) {
+    return true;
+  }
+  return normalizeAccountId(session.account_id) === normalizeAccountId(getSelectedAccountId());
+}
+
+function closeAccountMenu() {
+  if (el.accountMenu) {
+    el.accountMenu.classList.add("hidden");
+    el.accountMenu.hidden = true;
+    el.accountMenu.style.display = "none";
+    if (el.accountPickerBtn) {
+      el.accountPickerBtn.setAttribute("aria-expanded", "false");
+    }
+  }
+}
+
+function positionAccountMenu() {
+  if (!el.accountMenu || !el.accountPickerBtn) {
+    return;
+  }
+  const rect = el.accountPickerBtn.getBoundingClientRect();
+  const menuWidth = Math.max(240, Math.ceil(rect.width));
+  const preferredTop = Math.ceil(rect.bottom + 6);
+  const maxHeight = 260;
+  let top = preferredTop;
+  if (preferredTop + maxHeight > window.innerHeight - 8) {
+    top = Math.max(8, Math.ceil(rect.top - maxHeight - 6));
+  }
+  const left = Math.max(8, Math.min(Math.ceil(rect.left), window.innerWidth - menuWidth - 8));
+  el.accountMenu.style.left = `${left}px`;
+  el.accountMenu.style.top = `${top}px`;
+  el.accountMenu.style.minWidth = `${menuWidth}px`;
+}
+
+function openAccountMenu() {
+  if (!el.accountMenu) {
+    return;
+  }
+  setupAccountDropdown();
+  el.accountMenu.classList.remove("hidden");
+  el.accountMenu.hidden = false;
+  el.accountMenu.style.display = "block";
+  if (el.accountPickerBtn) {
+    el.accountPickerBtn.setAttribute("aria-expanded", "true");
+  }
+  positionAccountMenu();
+}
+
+function toggleAccountMenu() {
+  if (!el.accountMenu) {
+    return;
+  }
+  if (el.accountMenu.hidden || el.accountMenu.classList.contains("hidden")) {
+    openAccountMenu();
+  } else {
+    closeAccountMenu();
+  }
+}
+
+function renderAccountPickerLabel() {
+  if (!el.accountPickerBtn) {
+    return;
+  }
+  const selected = getSelectedAccount();
+  el.accountPickerBtn.textContent = selected ? selected.name : t("account.none");
+}
+
+function renderAccountMenu() {
+  if (!el.accountMenu) {
+    return;
+  }
+  setupAccountDropdown();
+  const items = Array.isArray(state.accounts) ? state.accounts : [];
+  const selectedId = getSelectedAccountId();
+  if (items.length === 0) {
+    el.accountMenu.innerHTML = `<div class="account-menu-empty">${escapeHtml(t("account.none"))}</div>`;
+    return;
+  }
+  el.accountMenu.innerHTML = items
+    .map((acc) => {
+      const isSelected = String(acc.id) === String(selectedId);
+      const name = escapeHtml(acc.name);
+      const statusTag = String(acc.status || "") === "archived" ? " (archived)" : "";
+      return `
+        <div class="account-menu-item${isSelected ? " is-selected" : ""}">
+          <button type="button" class="account-menu-select" data-account-action="select" data-account-id="${escapeHtml(acc.id)}">
+            ${name}${escapeHtml(statusTag)}
+          </button>
+          <button type="button" class="account-menu-delete" data-account-action="delete" data-account-id="${escapeHtml(acc.id)}" title="${escapeHtml(t("account.delete"))}" aria-label="${escapeHtml(t("account.delete"))}">
+            ×
+          </button>
+        </div>
+      `;
+    })
+    .join("");
+}
+
+function formatMoney(value) {
+  const n = Number(value);
+  return Number.isFinite(n) ? `${n.toFixed(2)} U` : "--";
+}
+
+function formatPercent(value) {
+  const n = Number(value);
+  return Number.isFinite(n) ? `${n.toFixed(2)}%` : "--";
+}
+
+function formatAccountStats(stats) {
+  if (!stats) {
+    return t("account.stats_empty");
+  }
+  const winRate = stats.win_rate_pct == null ? "--" : `${Number(stats.win_rate_pct).toFixed(2)}%`;
+  const sharpe = stats.sharpe == null ? "--" : Number(stats.sharpe).toFixed(3);
+  return [
+    `${t("account.equity")}: ${formatMoney(stats.equity)}`,
+    `${t("account.available")}: ${formatMoney(stats.available_balance)}`,
+    `${t("account.locked")}: ${formatMoney(stats.locked_margin)}`,
+    `${t("account.total_net")}: ${formatMoney(stats.total_net_pnl_usdt)}`,
+    `${t("account.total_cost")}: ${formatMoney(stats.total_cost_usdt)}`,
+    `${t("account.return")}: ${formatPercent(stats.return_pct)}`,
+    `${t("account.sharpe")}: ${sharpe}`,
+    `${t("account.win_rate")}: ${winRate}`,
+    `${t("account.trades")}: ${Number(stats.trade_count || 0)} / ${Number(stats.filled_trade_count || 0)}`,
+  ].join("\n");
+}
+
+async function refreshAccountStats() {
+  const accountId = getSelectedAccountId();
+  if (!accountId) {
+    state.accountStats = null;
+    if (el.accountStatsBox) {
+      el.accountStatsBox.textContent = t("account.stats_empty");
+    }
+    return null;
+  }
+  const stats = await apiGet(`/api/accounts/${encodeURIComponent(accountId)}/stats`);
+  state.accountStats = stats;
+  if (el.accountStatsBox) {
+    el.accountStatsBox.textContent = formatAccountStats(stats);
+  }
+  return stats;
+}
+
+async function loadAccounts(preferredAccountId = null) {
+  closeAccountMenu();
+  const data = await apiGet("/api/accounts?include_archived=true");
+  const items = Array.isArray(data.items) ? data.items : [];
+  state.accounts = items;
+  if (items.length === 0) {
+    state.selectedAccountId = null;
+    try {
+      localStorage.removeItem(ACCOUNT_STORAGE_KEY);
+    } catch (_) {
+      // ignore
+    }
+    renderAccountPickerLabel();
+    renderAccountMenu();
+    closeAccountMenu();
+    state.accountStats = null;
+    if (el.accountStatsBox) {
+      el.accountStatsBox.textContent = t("account.stats_empty");
+    }
+    return items;
+  }
+
+  const saved = localStorage.getItem(ACCOUNT_STORAGE_KEY);
+  const target = preferredAccountId || state.selectedAccountId || saved || items[0].id;
+  const hasTarget = items.some((acc) => String(acc.id) === String(target));
+  state.selectedAccountId = hasTarget ? String(target) : String(items[0].id);
+  try {
+    localStorage.setItem(ACCOUNT_STORAGE_KEY, state.selectedAccountId);
+  } catch (_) {
+    // ignore
+  }
+  renderAccountPickerLabel();
+  renderAccountMenu();
+  closeAccountMenu();
+  await refreshAccountStats();
+  return items;
+}
+
+async function ensureAccountReady() {
+  await loadAccounts();
+}
+
+async function createAccountFromPrompt() {
+  const defaultName = `Account ${new Date().toISOString().slice(0, 10)}`;
+  const nameInput = window.prompt(t("account.prompt_name"), defaultName);
+  if (nameInput == null) {
+    return;
+  }
+  const name = nameInput.trim();
+  if (!name) {
+    throw new Error("name cannot be empty");
+  }
+  const balanceInput = window.prompt(t("account.prompt_balance"), "10000");
+  if (balanceInput == null) {
+    return;
+  }
+  const initialBalance = Number(balanceInput);
+  if (!Number.isFinite(initialBalance) || initialBalance <= 0) {
+    throw new Error(t("prediction.invalid_margin"));
+  }
+
+  const account = await apiPost("/api/accounts", {
+    name,
+    initial_balance: initialBalance,
+  });
+  await loadAccounts(account.id);
+  setStatus(t("status.account_created", { name: account.name }));
+}
+
+async function deleteCurrentAccount(accountIdOverride = null) {
+  const accountId = String(accountIdOverride || getSelectedAccountId() || "").trim();
+  if (!accountId) {
+    return;
+  }
+  if (!window.confirm(t("account.confirm_delete"))) {
+    return;
+  }
+  const account = await apiDelete(`/api/accounts/${encodeURIComponent(accountId)}`);
+  const remaining = state.accounts.filter((acc) => String(acc.id) !== accountId);
+  const nextId = remaining.length > 0 ? String(remaining[0].id) : null;
+  await loadAccounts(nextId);
+  closeAccountMenu();
+  setStatus(t("status.account_deleted", { name: account.name }));
+}
+
 function formatResult(session) {
   if (!session) {
     return t("result.no_session");
@@ -2106,6 +2574,9 @@ function formatResult(session) {
 
   const lines = [];
   lines.push(`session: ${session.session_id}`);
+  if (session.account_id) {
+    lines.push(`account: ${session.account_id}`);
+  }
   lines.push(`pair/tf: ${session.pair} ${session.timeframe}`);
   lines.push(`status: ${session.status}`);
   lines.push(`bars: ${session.cursor + 1}/${session.total_bars}`);
@@ -2115,6 +2586,9 @@ function formatResult(session) {
     lines.push(`side: ${session.prediction.side}`);
     if (session.prediction.margin_usdt != null && session.prediction.leverage != null) {
       lines.push(`margin/leverage: ${Number(session.prediction.margin_usdt).toFixed(2)}U x${Number(session.prediction.leverage).toFixed(0)}`);
+    }
+    if (session.prediction.fee_bps != null && session.prediction.slippage_bps != null) {
+      lines.push(`cost_model: fee ${Number(session.prediction.fee_bps).toFixed(1)}bps + slippage ${Number(session.prediction.slippage_bps).toFixed(1)}bps`);
     }
   }
 
@@ -2131,8 +2605,16 @@ function formatResult(session) {
     if (session.trade.pnl_pct != null) {
       lines.push(`pnl: ${Number(session.trade.pnl_pct).toFixed(3)}%`);
     }
+    if (session.trade.gross_pnl_usdt != null) {
+      lines.push(`gross_pnl_u: ${Number(session.trade.gross_pnl_usdt).toFixed(3)}U`);
+    }
+    if (session.trade.fee_usdt != null || session.trade.slippage_usdt != null) {
+      const fee = Number(session.trade.fee_usdt ?? 0);
+      const slippage = Number(session.trade.slippage_usdt ?? 0);
+      lines.push(`cost_u: ${(fee + slippage).toFixed(3)}U (fee ${fee.toFixed(3)}U + slippage ${slippage.toFixed(3)}U)`);
+    }
     if (session.trade.pnl_usdt != null) {
-      lines.push(`${session.trade.status === "closed" ? "final_pnl_u" : "pnl_u"}: ${Number(session.trade.pnl_usdt).toFixed(3)}U`);
+      lines.push(`${session.trade.status === "closed" ? "final_net_pnl_u" : "net_pnl_u"}: ${Number(session.trade.pnl_usdt).toFixed(3)}U`);
     }
     if (session.trade.roi_pct != null) {
       lines.push(`${session.trade.status === "closed" ? "final_roi" : "roi"}: ${Number(session.trade.roi_pct).toFixed(3)}%`);
@@ -2526,6 +3008,7 @@ async function createSession() {
     onPriceChartPointerUp();
 
     const payload = {
+      account_id: getSelectedAccountId(),
       pair: el.pair.value,
       timeframe: el.timeframe.value,
       range_start: dateToUnix(el.startDate.value, false),
@@ -2536,6 +3019,9 @@ async function createSession() {
     if (!payload.range_start || !payload.range_end || payload.range_start >= payload.range_end) {
       throw new Error(t("error.invalid_date_range"));
     }
+    if (!payload.account_id) {
+      throw new Error(t("error.account_required"));
+    }
 
     setStatus(t("status.creating_session"));
     const session = await apiPost("/api/replay/sessions", payload);
@@ -2543,6 +3029,7 @@ async function createSession() {
       return;
     }
     renderSession(session, true);
+    await refreshAccountStats();
     applyPredictionModePreset(true);
     renderPredictionMetrics();
     try {
@@ -2570,6 +3057,9 @@ async function refreshRandomSession() {
 }
 
 async function submitPrediction() {
+  if (!state.session || state.session.done || !isSessionAlignedWithSelectedAccount(state.session)) {
+    await createSession();
+  }
   if (!state.session) {
     throw new Error(t("error.create_session_first"));
   }
@@ -2599,6 +3089,11 @@ async function submitPrediction() {
     return;
   }
   renderSession(session, false);
+  try {
+    await refreshAccountStats();
+  } catch (err) {
+    setStatus(t("status.account_failed", { err: err.message || err }));
+  }
   setStatus(
     t("status.prediction_submitted", {
       entry: Number(session.prediction.entry_price).toFixed(4),
@@ -2624,6 +3119,13 @@ async function step(steps = 1) {
       return;
     }
     renderSession(session, false);
+    if (session.done || session.trade?.status === "closed" || session.trade?.reason === "entry_not_filled") {
+      try {
+        await refreshAccountStats();
+      } catch (err) {
+        setStatus(t("status.account_failed", { err: err.message || err }));
+      }
+    }
     try {
       await refreshIndicators();
     } catch (err) {
@@ -2679,7 +3181,7 @@ async function startReplayFlow() {
     await state.sessionLoadingPromise;
   }
 
-  if (!state.session || state.session.done) {
+  if (!state.session || state.session.done || !isSessionAlignedWithSelectedAccount(state.session)) {
     setStatus(t("status.replay_preparing"));
     await createSession();
   } else {
@@ -2701,6 +3203,69 @@ async function startReplayFlow() {
 }
 
 function wireEvents() {
+  el.accountPickerBtn?.addEventListener("click", () => {
+    toggleAccountMenu();
+  });
+  el.accountMenu?.addEventListener("click", async (event) => {
+    const target = event.target instanceof Element ? event.target : null;
+    if (!target) {
+      return;
+    }
+    const action = target.getAttribute("data-account-action");
+    const accountId = target.getAttribute("data-account-id");
+    if (!action || !accountId) {
+      return;
+    }
+    try {
+      if (action === "delete") {
+        await deleteCurrentAccount(accountId);
+        return;
+      }
+      if (action === "select") {
+        state.selectedAccountId = String(accountId);
+        try {
+          localStorage.setItem(ACCOUNT_STORAGE_KEY, state.selectedAccountId);
+        } catch (_) {
+          // ignore
+        }
+        renderAccountPickerLabel();
+        renderAccountMenu();
+        closeAccountMenu();
+        await refreshAccountStats();
+      }
+    } catch (err) {
+      setStatus(t("status.account_failed", { err: err.message || err }));
+    }
+  });
+  window.addEventListener("click", (event) => {
+    const root = el.accountPicker;
+    const menu = el.accountMenu;
+    if (!root && !menu) {
+      return;
+    }
+    const target = event.target instanceof Node ? event.target : null;
+    if (target && ((root && root.contains(target)) || (menu && menu.contains(target)))) {
+      return;
+    }
+    closeAccountMenu();
+  });
+  window.addEventListener("resize", () => {
+    if (!el.accountMenu?.classList.contains("hidden")) {
+      positionAccountMenu();
+    }
+  });
+  window.addEventListener("scroll", () => {
+    if (!el.accountMenu?.classList.contains("hidden")) {
+      positionAccountMenu();
+    }
+  });
+  el.newAccountBtn?.addEventListener("click", async () => {
+    try {
+      await createAccountFromPrompt();
+    } catch (err) {
+      setStatus(t("status.account_failed", { err: err.message || err }));
+    }
+  });
   el.pair?.addEventListener("change", async () => {
     await loadTimeframes();
     await loadRange();
@@ -2752,7 +3317,10 @@ function wireEvents() {
 }
 
 async function init() {
+  setupAccountDropdown();
   applyI18n();
+  closeAccountMenu();
+  await ensureAccountReady();
   setStatus(t("status.loading_market"));
   const hasPairs = await loadPairs();
   if (!hasPairs) {

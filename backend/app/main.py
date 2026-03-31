@@ -15,7 +15,19 @@ from app.services.bootstrap import ensure_sample_data
 from app.services.exchange_downloader import DownloadError, TIMEFRAME_SECONDS, download_history
 from app.services.indicators import build_indicator_payload
 from app.services.replay import ReplayError, create_session, get_session_snapshot, step_session, submit_prediction
-from app.services.repository import candles_count, get_candles, get_market_range, get_session, list_pairs, list_timeframes
+from app.services.repository import (
+    candles_count,
+    create_account,
+    delete_account,
+    get_account,
+    get_account_stats,
+    get_candles,
+    get_market_range,
+    get_session,
+    list_accounts,
+    list_pairs,
+    list_timeframes,
+)
 
 APP_DIR = Path(__file__).resolve().parent
 STATIC_DIR = APP_DIR / "static"
@@ -32,6 +44,7 @@ app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
 class SessionCreateRequest(BaseModel):
+    account_id: str | None = None
     pair: str = Field(default="BINANCE:BTC/USDT")
     timeframe: str = Field(default="4h")
     range_start: int
@@ -66,6 +79,11 @@ class DownloadRequest(BaseModel):
     end_ts: int = Field(..., description="Unix timestamp seconds")
 
 
+class AccountCreateRequest(BaseModel):
+    name: str = Field(..., min_length=1, max_length=64)
+    initial_balance: float = Field(default=10000, gt=0)
+
+
 @app.on_event("startup")
 def startup() -> None:
     init_db()
@@ -91,6 +109,46 @@ def health() -> dict:
 @app.get("/api/market/pairs")
 def market_pairs() -> dict:
     return {"pairs": list_pairs()}
+
+
+@app.get("/api/accounts")
+def api_list_accounts(include_archived: bool = False) -> dict:
+    return {"items": list_accounts(include_archived=include_archived)}
+
+
+@app.post("/api/accounts")
+def api_create_account(req: AccountCreateRequest) -> dict:
+    name = req.name.strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="name cannot be empty")
+    return create_account(name=name, initial_balance=req.initial_balance)
+
+
+@app.get("/api/accounts/{account_id}")
+def api_get_account(account_id: str) -> dict:
+    account = get_account(account_id)
+    if not account:
+        raise HTTPException(status_code=404, detail="Account not found")
+    return account
+
+
+@app.delete("/api/accounts/{account_id}")
+def api_delete_account(account_id: str) -> dict:
+    try:
+        account = delete_account(account_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if not account:
+        raise HTTPException(status_code=404, detail="Account not found")
+    return account
+
+
+@app.get("/api/accounts/{account_id}/stats")
+def api_get_account_stats(account_id: str) -> dict:
+    stats = get_account_stats(account_id)
+    if not stats:
+        raise HTTPException(status_code=404, detail="Account not found")
+    return stats
 
 
 @app.get("/api/market/timeframes")
@@ -138,6 +196,7 @@ def indicators_catalog() -> dict:
 def api_create_session(req: SessionCreateRequest) -> dict:
     try:
         return create_session(
+            account_id=req.account_id,
             pair=req.pair,
             timeframe=req.timeframe,
             range_start=req.range_start,

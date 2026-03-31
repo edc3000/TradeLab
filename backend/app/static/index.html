@@ -22,6 +22,13 @@
 
       <section class="toolbar card">
         <div class="field-group">
+          <label for="accountPickerBtn" data-i18n="account.label">账户</label>
+          <div id="accountPicker" class="account-picker">
+            <button id="accountPickerBtn" class="btn account-picker-btn" type="button" aria-haspopup="listbox" aria-expanded="false">--</button>
+            <div id="accountMenu" class="account-menu hidden" hidden></div>
+          </div>
+        </div>
+        <div class="field-group">
           <label for="pairSelect" data-i18n="toolbar.pair">Pair</label>
           <select id="pairSelect"></select>
         </div>
@@ -42,6 +49,7 @@
           <input id="visibleBars" type="number" min="20" value="120" />
         </div>
         <div class="toolbar-actions">
+          <button id="newAccountBtn" class="btn" data-i18n="account.new">新建账户</button>
           <button
             id="refreshRandomBtn"
             class="btn icon-btn"
@@ -84,6 +92,11 @@
         </div>
 
         <div class="side-panel">
+          <section class="card panel account-panel">
+            <h3 data-i18n="account.title">账户统计</h3>
+            <pre id="accountStatsBox">--</pre>
+          </section>
+
           <section class="card panel prediction-panel">
             <h3 data-i18n="prediction.title">Prediction</h3>
             <div class="field-group">

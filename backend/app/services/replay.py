@@ -12,6 +12,10 @@ class ReplayError(Exception):
     pass
 
 
+DEFAULT_FEE_BPS = 5.0
+DEFAULT_SLIPPAGE_BPS = 2.0
+
+
 @dataclass
 class TradeState:
     status: str
@@ -32,6 +36,13 @@ class TradeState:
     pnl_usdt: float | None
     roi_pct: float | None
     liquidation_price: float | None
+    fee_bps: float = DEFAULT_FEE_BPS
+    slippage_bps: float = DEFAULT_SLIPPAGE_BPS
+    gross_pnl_usdt: float | None = None
+    fee_usdt: float | None = None
+    slippage_usdt: float | None = None
+    cost_usdt: float | None = None
+    net_pnl_usdt: float | None = None
 
 
 def _to_chart_bar(candle: dict[str, Any]) -> dict[str, float | int]:
@@ -85,6 +96,20 @@ def _compute_exit(
     return take_profit_price, "take_profit"
 
 
+def _calc_roundtrip_costs(
+    *,
+    entry_notional: float,
+    exit_notional: float,
+    fee_bps: float,
+    slippage_bps: float,
+) -> tuple[float, float, float]:
+    fee_rate = max(fee_bps, 0.0) / 10_000.0
+    slippage_rate = max(slippage_bps, 0.0) / 10_000.0
+    fee_usdt = (entry_notional + exit_notional) * fee_rate
+    slippage_usdt = (entry_notional + exit_notional) * slippage_rate
+    return fee_usdt, slippage_usdt, fee_usdt + slippage_usdt
+
+
 def evaluate_trade(
     prediction: dict[str, Any],
     candles: list[dict[str, Any]],
@@ -100,6 +125,8 @@ def evaluate_trade(
     sl_tp_priority = prediction["sl_tp_priority"]
     margin_usdt = float(prediction.get("margin_usdt") or 100.0)
     leverage = float(prediction.get("leverage") or 10.0)
+    fee_bps = float(prediction.get("fee_bps") or DEFAULT_FEE_BPS)
+    slippage_bps = float(prediction.get("slippage_bps") or DEFAULT_SLIPPAGE_BPS)
     position_notional = margin_usdt * leverage
     quantity = position_notional / entry_price if entry_price > 0 else 0.0
     liquidation_price = (
@@ -140,6 +167,8 @@ def evaluate_trade(
             pnl_usdt=None,
             roi_pct=None,
             liquidation_price=liquidation_price,
+            fee_bps=fee_bps,
+            slippage_bps=slippage_bps,
         )
 
     entry_index: int | None = None
@@ -173,6 +202,8 @@ def evaluate_trade(
             pnl_usdt=None,
             roi_pct=None,
             liquidation_price=liquidation_price,
+            fee_bps=fee_bps,
+            slippage_bps=slippage_bps,
         )
 
     for idx in range(entry_index, current_cursor + 1):
@@ -194,15 +225,23 @@ def evaluate_trade(
             else ((entry_price - maybe_exit) / entry_price) * 100.0
         )
         r_multiple = pnl_pct / stop_loss_pct if stop_loss_pct > 0 else None
-        pnl_usdt = (
+        gross_pnl_usdt = (
             (maybe_exit - entry_price) * quantity
             if side == "long"
             else (entry_price - maybe_exit) * quantity
         )
-        roi_pct = (pnl_usdt / margin_usdt) * 100.0 if margin_usdt > 0 else None
         if reason == "liquidation":
-            pnl_usdt = -margin_usdt
-            roi_pct = -100.0
+            gross_pnl_usdt = -margin_usdt
+
+        exit_notional = abs(quantity * maybe_exit)
+        fee_usdt, slippage_usdt, cost_usdt = _calc_roundtrip_costs(
+            entry_notional=position_notional,
+            exit_notional=exit_notional,
+            fee_bps=fee_bps,
+            slippage_bps=slippage_bps,
+        )
+        net_pnl_usdt = gross_pnl_usdt - cost_usdt
+        roi_pct = (net_pnl_usdt / margin_usdt) * 100.0 if margin_usdt > 0 else None
 
         return TradeState(
             status="closed",
@@ -220,9 +259,16 @@ def evaluate_trade(
             leverage=leverage,
             position_notional=position_notional,
             quantity=quantity,
-            pnl_usdt=pnl_usdt,
+            pnl_usdt=net_pnl_usdt,
             roi_pct=roi_pct,
             liquidation_price=liquidation_price,
+            fee_bps=fee_bps,
+            slippage_bps=slippage_bps,
+            gross_pnl_usdt=gross_pnl_usdt,
+            fee_usdt=fee_usdt,
+            slippage_usdt=slippage_usdt,
+            cost_usdt=cost_usdt,
+            net_pnl_usdt=net_pnl_usdt,
         )
 
     if current_cursor == len(candles) - 1:
@@ -233,12 +279,20 @@ def evaluate_trade(
             else ((entry_price - last_close) / entry_price) * 100.0
         )
         r_multiple = pnl_pct / stop_loss_pct if stop_loss_pct > 0 else None
-        pnl_usdt = (
+        gross_pnl_usdt = (
             (last_close - entry_price) * quantity
             if side == "long"
             else (entry_price - last_close) * quantity
         )
-        roi_pct = (pnl_usdt / margin_usdt) * 100.0 if margin_usdt > 0 else None
+        exit_notional = abs(quantity * last_close)
+        fee_usdt, slippage_usdt, cost_usdt = _calc_roundtrip_costs(
+            entry_notional=position_notional,
+            exit_notional=exit_notional,
+            fee_bps=fee_bps,
+            slippage_bps=slippage_bps,
+        )
+        net_pnl_usdt = gross_pnl_usdt - cost_usdt
+        roi_pct = (net_pnl_usdt / margin_usdt) * 100.0 if margin_usdt > 0 else None
         return TradeState(
             status="closed",
             reason="end_of_data",
@@ -255,9 +309,16 @@ def evaluate_trade(
             leverage=leverage,
             position_notional=position_notional,
             quantity=quantity,
-            pnl_usdt=pnl_usdt,
+            pnl_usdt=net_pnl_usdt,
             roi_pct=roi_pct,
             liquidation_price=liquidation_price,
+            fee_bps=fee_bps,
+            slippage_bps=slippage_bps,
+            gross_pnl_usdt=gross_pnl_usdt,
+            fee_usdt=fee_usdt,
+            slippage_usdt=slippage_usdt,
+            cost_usdt=cost_usdt,
+            net_pnl_usdt=net_pnl_usdt,
         )
 
     return TradeState(
@@ -279,7 +340,54 @@ def evaluate_trade(
         pnl_usdt=None,
         roi_pct=None,
         liquidation_price=liquidation_price,
+        fee_bps=fee_bps,
+        slippage_bps=slippage_bps,
     )
+
+
+def _trade_to_payload(trade: TradeState) -> dict[str, Any]:
+    return {
+        "status": trade.status,
+        "reason": trade.reason,
+        "entry_price": trade.entry_price,
+        "entry_time": trade.entry_time,
+        "stop_loss_price": trade.stop_loss_price,
+        "take_profit_price": trade.take_profit_price,
+        "exit_price": trade.exit_price,
+        "exit_time": trade.exit_time,
+        "pnl_pct": trade.pnl_pct,
+        "r_multiple": trade.r_multiple,
+        "margin_usdt": trade.margin_usdt,
+        "leverage": trade.leverage,
+        "position_notional": trade.position_notional,
+        "quantity": trade.quantity,
+        "pnl_usdt": trade.pnl_usdt,
+        "roi_pct": trade.roi_pct,
+        "liquidation_price": trade.liquidation_price,
+        "fee_bps": trade.fee_bps,
+        "slippage_bps": trade.slippage_bps,
+        "gross_pnl_usdt": trade.gross_pnl_usdt,
+        "fee_usdt": trade.fee_usdt,
+        "slippage_usdt": trade.slippage_usdt,
+        "cost_usdt": trade.cost_usdt,
+        "net_pnl_usdt": trade.net_pnl_usdt,
+    }
+
+
+def _maybe_settle_account_trade(
+    session: dict[str, Any],
+    prediction: dict[str, Any] | None,
+    candles: list[dict[str, Any]],
+) -> None:
+    if not prediction or not session.get("account_id"):
+        return
+    trade = evaluate_trade(prediction, candles, int(session["visible_bars"]), int(session["cursor"]))
+    should_settle = (trade.status == "closed") or (
+        str(session.get("status")) == "completed" and trade.reason == "entry_not_filled"
+    )
+    if not should_settle:
+        return
+    repository.settle_account_trade(session=session, prediction=prediction, trade=_trade_to_payload(trade))
 
 
 def _session_payload(session: dict[str, Any], candles: list[dict[str, Any]], prediction: dict[str, Any] | None) -> dict[str, Any]:
@@ -288,6 +396,7 @@ def _session_payload(session: dict[str, Any], candles: list[dict[str, Any]], pre
     done = (session.get("status") == "completed") or (cursor >= len(candles) - 1)
     payload: dict[str, Any] = {
         "session_id": session["id"],
+        "account_id": session.get("account_id"),
         "pair": session["pair"],
         "timeframe": session["timeframe"],
         "status": session["status"],
@@ -303,29 +412,12 @@ def _session_payload(session: dict[str, Any], candles: list[dict[str, Any]], pre
 
     if prediction:
         trade = evaluate_trade(prediction, candles, int(session["visible_bars"]), cursor)
-        payload["trade"] = {
-            "status": trade.status,
-            "reason": trade.reason,
-            "entry_price": trade.entry_price,
-            "entry_time": trade.entry_time,
-            "stop_loss_price": trade.stop_loss_price,
-            "take_profit_price": trade.take_profit_price,
-            "exit_price": trade.exit_price,
-            "exit_time": trade.exit_time,
-            "pnl_pct": trade.pnl_pct,
-            "r_multiple": trade.r_multiple,
-            "margin_usdt": trade.margin_usdt,
-            "leverage": trade.leverage,
-            "position_notional": trade.position_notional,
-            "quantity": trade.quantity,
-            "pnl_usdt": trade.pnl_usdt,
-            "roi_pct": trade.roi_pct,
-            "liquidation_price": trade.liquidation_price,
-        }
+        payload["trade"] = _trade_to_payload(trade)
     return payload
 
 
 def create_session(
+    account_id: str | None,
     pair: str,
     timeframe: str,
     range_start: int,
@@ -336,6 +428,10 @@ def create_session(
 ) -> dict[str, Any]:
     if visible_bars < 20:
         raise ReplayError("visible_bars must be at least 20")
+    if account_id:
+        account = repository.get_account(account_id)
+        if not account:
+            raise ReplayError("Account not found")
 
     candles = repository.get_candles(pair, timeframe, range_start, range_end)
     if hidden_bars is None:
@@ -364,6 +460,7 @@ def create_session(
 
     session = {
         "id": str(uuid4()),
+        "account_id": account_id,
         "pair": pair,
         "timeframe": timeframe,
         "range_start": range_start,
@@ -388,6 +485,7 @@ def get_session_snapshot(session_id: str) -> dict[str, Any]:
         raise ReplayError("Session not found")
     candles = repository.get_scenario_candles(session)
     prediction = repository.get_prediction(session_id)
+    _maybe_settle_account_trade(session, prediction, candles)
     return _session_payload(session, candles, prediction=prediction)
 
 
@@ -415,6 +513,8 @@ def submit_prediction(
     session = repository.get_session(session_id)
     if not session:
         raise ReplayError("Session not found")
+    if repository.get_prediction(session_id):
+        raise ReplayError("Prediction already submitted for this session")
 
     candles = repository.get_scenario_candles(session)
     entry_index = int(session["visible_bars"])
@@ -472,8 +572,23 @@ def submit_prediction(
         "stop_loss_price": float(sl_price),
         "take_profit_price": float(tp_price),
         "entry_type": "limit",
+        "fee_bps": DEFAULT_FEE_BPS,
+        "slippage_bps": DEFAULT_SLIPPAGE_BPS,
     }
-    repository.save_prediction(prediction)
+    account_id = session.get("account_id")
+    locked = False
+    if account_id:
+        try:
+            repository.lock_account_margin(str(account_id), float(margin_usdt))
+            locked = True
+        except ValueError as exc:
+            raise ReplayError(str(exc)) from exc
+    try:
+        repository.save_prediction(prediction)
+    except Exception as exc:
+        if account_id and locked:
+            repository.unlock_account_margin(str(account_id), float(margin_usdt))
+        raise ReplayError(f"Failed to save prediction: {exc}") from exc
 
     current_cursor = int(session["cursor"])
     status = "running" if current_cursor < len(candles) - 1 else "completed"
@@ -497,6 +612,7 @@ def step_session(session_id: str, steps: int) -> dict[str, Any]:
 
     candles = repository.get_scenario_candles(session)
     if session["status"] == "completed":
+        _maybe_settle_account_trade(session, prediction, candles)
         payload = _session_payload(session, candles, prediction)
         payload["new_bars"] = []
         return payload
@@ -504,6 +620,8 @@ def step_session(session_id: str, steps: int) -> dict[str, Any]:
     old_cursor = int(session["cursor"])
     if old_cursor >= len(candles) - 1:
         session["status"] = "completed"
+        repository.update_session_cursor_status(session_id, old_cursor, "completed")
+        _maybe_settle_account_trade(session, prediction, candles)
         return _session_payload(session, candles, prediction)
 
     proposed_cursor = min(len(candles) - 1, old_cursor + steps)
@@ -518,6 +636,7 @@ def step_session(session_id: str, steps: int) -> dict[str, Any]:
 
     session["cursor"] = new_cursor
     session["status"] = status
+    _maybe_settle_account_trade(session, prediction, candles)
 
     payload = _session_payload(session, candles, prediction)
     payload["new_bars"] = [_to_chart_bar(c) for c in candles[old_cursor + 1 : new_cursor + 1]]

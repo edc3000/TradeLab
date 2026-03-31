@@ -116,6 +116,110 @@ body {
   width: 100px;
 }
 
+.account-picker {
+  position: relative;
+  min-width: 190px;
+}
+
+.account-picker-btn {
+  width: 100%;
+  border-radius: 9px;
+  border: 1px solid #2f4256;
+  background: #0e1822;
+  color: var(--text);
+  padding: 8px 10px;
+  text-align: left;
+}
+
+.account-picker-btn::after {
+  content: "▾";
+  float: right;
+  color: #88a0b7;
+}
+
+.account-menu {
+  position: fixed;
+  z-index: 1000;
+  top: 0;
+  left: 0;
+  min-width: 240px;
+  max-height: 260px;
+  overflow-y: auto;
+  border: 1px solid #2f4256;
+  border-radius: 10px;
+  background: #0f1b26;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.35);
+}
+
+.account-menu.hidden {
+  display: none;
+}
+
+.account-menu[hidden] {
+  display: none !important;
+}
+
+.account-menu-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 8px;
+  border-bottom: 1px solid rgba(66, 88, 109, 0.35);
+}
+
+.account-menu-item:last-child {
+  border-bottom: 0;
+}
+
+.account-menu-item.is-selected {
+  background: rgba(40, 70, 98, 0.45);
+}
+
+.account-menu-select {
+  flex: 1 1 auto;
+  border: 0 !important;
+  background: transparent;
+  color: #d6e2f0;
+  text-align: left;
+  padding: 4px 2px;
+  cursor: pointer;
+}
+
+.account-menu-select:hover {
+  color: #f1f6fc;
+}
+
+.account-menu-delete {
+  width: 24px;
+  height: 24px;
+  border: 1px solid #3b5268;
+  border-radius: 6px;
+  background: #142433;
+  color: #b9ccdf;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s ease;
+}
+
+.account-menu-item:hover .account-menu-delete {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.account-menu-delete:hover {
+  background: #24374a;
+  color: #ffb1b1;
+}
+
+.account-menu-empty {
+  padding: 10px;
+  color: #90a6bc;
+  font-size: 0.83rem;
+}
+
 label {
   font-size: 0.82rem;
   color: var(--text-muted);
@@ -415,6 +519,10 @@ pre {
   border-radius: 8px;
   background: rgba(11, 22, 33, 0.75);
   min-height: 72px;
+}
+
+.account-panel pre {
+  min-height: 120px;
 }
 
 @media (max-width: 1080px) {
